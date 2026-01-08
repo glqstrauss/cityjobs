@@ -1,4 +1,5 @@
 import { SocrataClient } from "./lib/socrata";
+import { handleProcess } from "./process";
 import type { Env, SnapshotMetadata } from "./types";
 
 const SNAPSHOTS_PREFIX = "snapshots/raw/";
@@ -60,7 +61,8 @@ export async function handleScheduled(env: Env): Promise<void> {
 
   console.log("Snapshot stored successfully");
 
-  // TODO: Trigger process worker (via queue or service binding)
+  // Process the data
+  await handleProcess(env);
 }
 
 async function getLastSnapshotMetadata(env: Env): Promise<SnapshotMetadata | null> {

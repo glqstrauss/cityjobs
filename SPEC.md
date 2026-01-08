@@ -2,12 +2,13 @@
 
 ## Overview
 
-A Cloudflare-hosted data pipeline that:
+A GCP-hosted data pipeline that:
 
 1. Periodically downloads NYC Jobs Postings dataset snapshots
-2. Stores raw data in object storage
-3. Runs post-processing transformations
-4. Serves an interactive web UI for browsing/filtering
+2. Stores raw data in Cloud Storage
+3. Runs DuckDB-based SQL transformations
+4. Outputs Parquet files for client-side querying
+5. Serves a static web UI with DuckDB WASM for browsing/filtering
 
 ---
 
@@ -15,40 +16,37 @@ A Cloudflare-hosted data pipeline that:
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Cron Trigger   │────▶│  Fetch Worker   │────▶│   R2 Bucket     │
-│  (scheduled)    │     │                 │     │  (raw snapshots)│
-└─────────────────┘     └─────────────────┘     └────────┬────────┘
-                                                         │
-                                                         ▼
-                                                ┌─────────────────┐
-                                                │ Process Worker  │
-                                                │ (transform)     │
-                                                └────────┬────────┘
-                                                         │
-                                                         ▼
-                                                ┌─────────────────┐
-                                                │   D1 Database   │
-                                                │ (queryable data)│
-                                                └────────┬────────┘
-                                                         │
-                                                         ▼
-                                                ┌─────────────────┐
-                                                │   Web App UI    │
-                                                │ (Workers/Pages) │
-                                                └─────────────────┘
+│ Cloud Scheduler │────▶│ Cloud Function  │────▶│  Cloud Storage  │
+│  (daily cron)   │     │ (fetch + process)│    │ (raw JSON)      │
+└─────────────────┘     └────────┬────────┘     └─────────────────┘
+                                 │
+                                 │ DuckDB transforms
+                                 ▼
+                        ┌─────────────────┐
+                        │  Cloud Storage  │
+                        │   (Parquet)     │
+                        └────────┬────────┘
+                                 │
+                                 ▼
+                        ┌─────────────────┐
+                        │ Firebase Hosting│
+                        │ (static site +  │
+                        │  DuckDB WASM)   │
+                        └─────────────────┘
 ```
 
 ---
 
-## Cloudflare Services Used
+## GCP Services Used
 
-| Service          | Purpose                            | Free Tier Limits                 |
-| ---------------- | ---------------------------------- | -------------------------------- |
-| Workers          | Run fetch, process, and API logic  | 100k requests/day                |
-| Cron Triggers    | Schedule data fetching             | 5 cron triggers                  |
-| R2               | Store raw dataset snapshots        | 10GB storage, 10M Class A ops/mo |
-| D1               | SQLite database for queryable data | 5GB storage, 5M rows read/day    |
-| Pages (optional) | Host static frontend               | Unlimited sites                  |
+| Service           | Purpose                              | Free Tier Limits (Always Free)     |
+| ----------------- | ------------------------------------ | ---------------------------------- |
+| Cloud Functions   | Fetch data + DuckDB processing       | 2M invocations/mo, 400k GB-sec     |
+| Cloud Scheduler   | Daily cron trigger                   | 3 jobs                             |
+| Cloud Storage     | Raw JSON + processed Parquet         | 5GB in US regions                  |
+| Firebase Hosting  | Static site with DuckDB WASM         | 10GB storage, 360MB/day transfer   |
+
+**Note:** All limits are "always free" - no 12-month expiration.
 
 ---
 
@@ -58,185 +56,94 @@ A Cloudflare-hosted data pipeline that:
 
 - Portal: https://data.cityofnewyork.us
 - Dataset: kpav-sd4t
-- Data API Endpoint: https://data.cityofnewyork.us/api/v3/views/kpav-sd4t/query.json
+- Data API Endpoint: https://data.cityofnewyork.us/resource/kpav-sd4t.json
 - Metadata API Endpoint: https://data.cityofnewyork.us/api/views/metadata/v1/kpav-sd4t
 - Documentation: https://dev.socrata.com/foundry/data.cityofnewyork.us/kpav-sd4t
-- API Auth is in ./local.env
+- API Auth: stored in GCP Secret Manager
 
 ---
 
 ## Component Specs
 
-### 1. Fetch Worker (Scheduled)
+### 1. Cloud Function (Fetch + Process)
 
-**Trigger**: Cron schedule
+**Trigger**: Cloud Scheduler (daily at 4am UTC)
 
-**Schedule**: Daily at 4am
-
-**Language**: Typescript
+**Runtime**: Node.js 20 with DuckDB
 
 **Responsibilities**:
 
-- Call Socrata Metadata API to get updatedAt timestamp, only proceed if later than last R2 snapshot
-- Call Socrata Data API to get dataset
-- Handle pagination if needed
-- Store raw JSON snapshot in R2 with timestamp
-- Trigger post-processing (via queue or direct call)
+1. Check Socrata metadata for updates (skip if no new data)
+2. Fetch all job postings from Socrata API
+3. Store raw JSON snapshot in GCS
+4. Run DuckDB SQL transformations
+5. Export processed data as Parquet to GCS
 
-**R2 Storage Schema**:
+**GCS Storage Schema**:
 
 ```
-/snapshots/
-  /raw/
-    /2025-01-07T06:00:00Z.json
-    /2025-01-08T06:00:00Z.json
-    ...
+gs://cityjobs-data/
+├── raw/
+│   ├── 2025-01-07T06:00:00Z.json
+│   └── ...
+├── processed/
+│   └── jobs.parquet          # Latest processed data (overwritten)
+└── metadata.json             # Last update timestamps
+```
+
+**DuckDB Transformations** (SQL):
+
+```sql
+-- Example transformations (to be finalized)
+SELECT
+  job_id,
+  agency,
+  business_title,
+  CAST(salary_range_from AS DOUBLE) as salary_range_from,
+  CAST(salary_range_to AS DOUBLE) as salary_range_to,
+  salary_frequency,
+  -- Normalize to annual salary
+  CASE salary_frequency
+    WHEN 'Hourly' THEN CAST(salary_range_from AS DOUBLE) * 2080
+    WHEN 'Daily' THEN CAST(salary_range_from AS DOUBLE) * 260
+    ELSE CAST(salary_range_from AS DOUBLE)
+  END as salary_annual_from,
+  -- ... other columns and transforms
+FROM read_json('raw/latest.json')
 ```
 
 **Error Handling**:
 
-- Retry on transient failures (429, 5xx)
-- Log errors to whatever is the default error logging mechanism for Cloudflare Workers
-- Alert on failure by email
+- Cloud Functions has built-in retry on failure
+- Logs to Cloud Logging
+- Alert via Cloud Monitoring (optional)
 
 ---
 
-### 2. Process Worker
+### 2. Web Application
 
-**Trigger**: Called after fetch completes (or separate cron)
+**Hosting**: Firebase Hosting (static files)
 
-**Responsibilities**:
-
-- Read latest raw snapshot from R2
-- Apply transformations (skeleton - you fill in logic):
-  - Column type casting
-  - Computed columns
-  - Data cleaning
-  - Filtering/validation
-- append processed snapshot to R2 (for later analysis application)
-- replace D1 table `jobs` with latest snapshot
-
-**D1 Schema**
-
-```sql
-CREATE TABLE jobs (
-  -- Primary key (using job_id from source)
-  job_id TEXT PRIMARY KEY,
-
-  -- Agency & Organization
-  agency TEXT,
-  division_work_unit TEXT,
-
-  -- Job Classification
-  posting_type TEXT,                    -- Internal/External
-  business_title TEXT,
-  civil_service_title TEXT,
-  title_classification TEXT,            -- e.g., "Competitive-1"
-  title_code_no TEXT,
-  level TEXT,
-  job_category TEXT,
-
-  -- Employment Type
-  full_time_part_time_indicator TEXT,   -- F/P
-  career_level TEXT,
-  number_of_positions INTEGER,
-
-  -- Compensation
-  salary_range_from REAL,
-  salary_range_to REAL,
-  salary_frequency TEXT,                -- Annual/Hourly/Daily
-
-  -- Location
-  work_location TEXT,
-  work_location_1 TEXT,                 -- Secondary location field
-  residency_requirement TEXT,
-
-  -- Job Details
-  job_description TEXT,
-  minimum_qual_requirements TEXT,
-  preferred_skills TEXT,
-
-  -- Dates
-  posting_date TEXT,                    -- ISO timestamp
-  post_until TEXT,                      -- Expiration date
-  posting_updated TEXT,                 -- ISO timestamp
-  process_date TEXT,                    -- ISO timestamp
-
-  -- Metadata
-  snapshot_date TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
--- Indexes for filtering
-CREATE INDEX idx_agency ON jobs(agency);
-CREATE INDEX idx_job_category ON jobs(job_category);
-CREATE INDEX idx_posting_date ON jobs(posting_date);
-CREATE INDEX idx_salary_from ON jobs(salary_range_from);
-CREATE INDEX idx_salary_to ON jobs(salary_range_to);
-CREATE INDEX idx_career_level ON jobs(career_level);
-CREATE INDEX idx_posting_type ON jobs(posting_type);
-```
-
----
-
-### 3. Web Application
-
-**Hosting**: Cloudflare Workers (API) + Pages or inline HTML (UI)
+**Query Engine**: DuckDB WASM (runs entirely in browser)
 
 **Features**:
 
 - Browse all job postings in paginated table
-- Filter by:
-  - Agency
-  - Salary range
+- Filter by Agency, Salary range, Job Category
 - Sort by columns
-- Search (full-text or column-specific)
+- Full-text search
 - View job details
+- Export filtered results to CSV
 
-**API Endpoints**:
+**How it works**:
 
-```
-GET /api/jobs
-  Query params:
-    - page (number, default 1)
-    - limit (number, default 50, max 100)
-    - sort (string, column name)
-    - order (asc|desc)
-    - agency (string, filter)
-    - salary_min (number, filter)
-    - salary_max (number, filter)
-    - location (string, filter)
-    - search (string, full-text search)
+1. Static HTML/JS loads from Firebase Hosting
+2. On page load, fetches `jobs.parquet` from GCS (via public URL or Firebase)
+3. DuckDB WASM loads the Parquet file
+4. All filtering/sorting/searching runs locally via SQL queries
+5. No server-side API needed
 
-  Response: { data: Job[], total: number, page: number, pages: number }
-
-GET /api/jobs/:id
-  Response: Job
-
-GET /api/filters
-  Response: { agencies: string[], locations: string[], ... }
-  (For populating filter dropdowns)
-
-GET /api/stats
-  Response: { total_jobs: number, last_updated: string, ... }
-```
-
-**UI Stack Options**:
-
-| Option          | Pros                    | Cons             |
-| --------------- | ----------------------- | ---------------- |
-| Vanilla HTML/JS | Simple, no build step   | More manual work |
-| React/Vue SPA   | Rich interactivity      | Build complexity |
-| HTMX            | Server-rendered, simple | Less common      |
-
-**Recommendation**: [FILL IN after discussion]
-
-### Questions to Resolve:
-
-1. **Filter columns**: Which columns need filters? (dropdowns vs free text vs range)
-2. **UI preference**: Any framework preference? Keep it minimal?
-3. **Auth**: Public access or require login?
-4. **Export**: Need CSV/JSON export of filtered results?
+**UI Stack**: Vanilla JS + DuckDB WASM (minimal dependencies)
 
 ---
 
@@ -244,79 +151,110 @@ GET /api/stats
 
 ```
 cityjobs/
-├── wrangler.toml           # Cloudflare config
-├── src/
-│   ├── fetch.ts            # Fetch worker (cron)
-│   ├── process.ts          # Post-processing worker
-│   ├── api.ts              # Web API routes
-│   └── lib/
-│       ├── socrata.ts      # Socrata API client
-│       ├── transform.ts    # Data transformation (skeleton)
-│       └── db.ts           # D1 helpers
-├── migrations/
-│   └── 0001_init.sql       # D1 schema
-├── public/
-│   └── index.html          # Frontend (if inline)
-└── package.json
+├── functions/
+│   ├── src/
+│   │   ├── index.ts          # Cloud Function entry point
+│   │   ├── fetch.ts          # Socrata fetching logic
+│   │   ├── process.ts        # DuckDB processing
+│   │   └── lib/
+│   │       └── socrata.ts    # Socrata API client
+│   ├── sql/
+│   │   └── transform.sql     # DuckDB transformation queries
+│   ├── package.json
+│   └── tsconfig.json
+├── web/
+│   ├── index.html
+│   ├── app.js                # DuckDB WASM query logic
+│   └── style.css
+├── firebase.json             # Firebase Hosting config
+└── README.md
 ```
 
 ---
 
 ## Environment Variables / Secrets
 
-| Variable            | Description                      | Required    |
-| ------------------- | -------------------------------- | ----------- |
-| `SOCRATA_APP_TOKEN` | API token for higher rate limits | Recommended |
-| `R2_BUCKET`         | R2 bucket binding                | Yes         |
-| `D1_DATABASE`       | D1 database binding              | Yes         |
+| Variable              | Description                      | Storage            |
+| --------------------- | -------------------------------- | ------------------ |
+| `SOCRATA_APP_KEY_ID`  | Socrata API key ID               | Secret Manager     |
+| `SOCRATA_APP_KEY_SECRET` | Socrata API key secret        | Secret Manager     |
+| `GCS_BUCKET`          | Cloud Storage bucket name        | Environment var    |
 
 ---
 
 ## Deployment
 
-1. Create R2 bucket: `wrangler r2 bucket create cityjobs-data`
-2. Create D1 database: `wrangler d1 create cityjobs-db`
-3. Run migrations: `wrangler d1 execute cityjobs-db --file=./migrations/0001_init.sql`
-4. Deploy worker: `wrangler deploy`
+**One-time setup:**
+
+```bash
+# Create GCP project
+gcloud projects create cityjobs --name="NYC Jobs Pipeline"
+gcloud config set project cityjobs
+
+# Enable APIs
+gcloud services enable cloudfunctions.googleapis.com
+gcloud services enable cloudscheduler.googleapis.com
+gcloud services enable secretmanager.googleapis.com
+
+# Create GCS bucket
+gsutil mb -l us-central1 gs://cityjobs-data
+
+# Store secrets
+echo -n "your-key-id" | gcloud secrets create SOCRATA_APP_KEY_ID --data-file=-
+echo -n "your-key-secret" | gcloud secrets create SOCRATA_APP_KEY_SECRET --data-file=-
+
+# Deploy Cloud Function
+gcloud functions deploy cityjobs-fetch \
+  --runtime nodejs20 \
+  --trigger-http \
+  --entry-point main \
+  --source ./functions \
+  --set-secrets 'SOCRATA_APP_KEY_ID=SOCRATA_APP_KEY_ID:latest,SOCRATA_APP_KEY_SECRET=SOCRATA_APP_KEY_SECRET:latest'
+
+# Create Cloud Scheduler job
+gcloud scheduler jobs create http cityjobs-daily \
+  --schedule "0 4 * * *" \
+  --uri "https://REGION-PROJECT.cloudfunctions.net/cityjobs-fetch" \
+  --http-method POST
+
+# Initialize Firebase and deploy web app
+firebase init hosting
+firebase deploy
+```
 
 ---
 
-## Open Questions Summary
+## Migration from Cloudflare
 
-Please provide answers to proceed with implementation:
+**Current state (Cloudflare):**
+- Fetch worker deployed and working
+- Raw snapshots in R2 at `snapshots/raw/`
+- TypeScript transform placeholder (to be replaced)
 
-### Data Source
+**Migration steps:**
+1. Set up GCP project and services
+2. Port fetch logic to Cloud Function
+3. Implement DuckDB processing with SQL transforms
+4. Build static site with DuckDB WASM
+5. Deploy to Firebase Hosting
+6. Decommission Cloudflare resources
 
-- [ ] Dataset ID from NYC Open Data
-- [ ] Do you have a Socrata app token?
-- [ ] Fetch schedule (how often to pull data?)
-
-### Processing
-
-- [ ] List of columns to keep/transform
-- [ ] Computed columns needed
-- [ ] Keep historical snapshots or just latest?
-
-### Web App
-
-- [ ] Which columns need filter controls?
-- [ ] UI framework preference (or keep minimal)?
-- [ ] Public or authenticated access?
-- [ ] Export functionality needed?
-
-### Operations
-
-- [ ] Error notification preference (or just logs)?
-- [ ] Any monitoring requirements?
+**What can be reused:**
+- Socrata client logic (`src/lib/socrata.ts`)
+- General fetch flow
+- Understanding of data shape
 
 ---
 
 ## Next Steps
 
-Once questions are answered:
-
-1. I'll implement the fetch worker with Socrata integration
-2. Create D1 schema based on actual columns
-3. Build processing worker skeleton
-4. Implement API endpoints
-5. Build minimal UI for browsing/filtering
+- [x] Implement fetch worker (Cloudflare - prototype)
+- [x] Understand data shape and transformation needs
+- [ ] Set up GCP project and services
+- [ ] Port fetch logic to Cloud Function
+- [ ] Implement DuckDB SQL transformations
+- [ ] Output Parquet to GCS
+- [ ] Build static site with DuckDB WASM
+- [ ] Deploy to Firebase Hosting
+- [ ] Set up Cloud Scheduler cron
+- [ ] Decommission Cloudflare resources
