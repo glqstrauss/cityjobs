@@ -1,0 +1,23 @@
+name = "cityjobs"
+main = "src/index.ts"
+compatibility_date = "2024-12-05"
+
+[triggers]
+crons = ["0 4 * * *"]  # Daily at 4am UTC
+
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "cityjobs-data"
+
+[[d1_databases]]
+binding = "D1_DATABASE"
+database_name = "cityjobs-db"
+database_id = ""  # Fill in after running: wrangler d1 create cityjobs-db
+
+[vars]
+SOCRATA_BASE_URL = "https://data.cityofnewyork.us"
+SOCRATA_DATASET_ID = "kpav-sd4t"
+
+# Secrets (set via wrangler secret put):
+# - SOCRATA_APP_KEY_ID
+# - SOCRATA_APP_KEY_SECRET
