@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "db:migrate": "wrangler d1 execute cityjobs-db --file=./migrations/0001_init.sql"
+    "dev": "wrangler dev --env dev --remote --test-scheduled",
+    "deploy": "wrangler deploy --env production",
+    "db:migrate": "wrangler d1 execute cityjobs-db --remote --file=./migrations/0001_init.sql"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241205.0",

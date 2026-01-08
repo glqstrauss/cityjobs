@@ -57,11 +57,34 @@ npm run db:migrate   # Run D1 migrations
 npx tsc --noEmit     # Type check
 ```
 
+## Local Development
+
+Wrangler uses environment-based configuration (`[env.dev]` and `[env.production]` in wrangler.toml).
+
+**Start dev server:**
+```bash
+npm run dev
+# or: npx wrangler dev --env dev --remote
+```
+
+**Test scheduled triggers:**
+```bash
+# In another terminal, trigger the cron handler:
+curl http://localhost:8787/__scheduled?cron=0+4+*+*+*
+```
+
+**View logs:** Logs appear in the terminal running `wrangler dev`.
+
 ## Deployment Checklist
 
-1. Create R2 bucket: `wrangler r2 bucket create cityjobs-data`
+**One-time setup:**
+1. Create R2 buckets: `wrangler r2 bucket create cityjobs-data` and `cityjobs-data-dev`
 2. Create D1 database: `wrangler d1 create cityjobs-db`
 3. Update `database_id` in wrangler.toml
 4. Run migrations: `npm run db:migrate`
 5. Set secrets: `wrangler secret put SOCRATA_APP_KEY_ID`, etc.
-6. Deploy: `npm run deploy`
+
+**Deploy:**
+```bash
+npm run deploy
+```
