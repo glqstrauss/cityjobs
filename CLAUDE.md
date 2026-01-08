@@ -88,3 +88,26 @@ curl http://localhost:8787/__scheduled?cron=0+4+*+*+*
 ```bash
 npm run deploy
 ```
+
+## Production
+
+**URL:** https://cityjobs-production.gstrauss5.workers.dev
+
+**Endpoints:**
+- `GET /health` - Health check
+
+**Scheduled Jobs:**
+- Cron runs daily at 4am UTC (configured in `[env.production.triggers]`)
+- Fetches NYC Jobs data from Socrata API
+- Stores raw snapshots in R2 bucket `cityjobs-data`
+
+**Secrets** (set with `--env production`):
+```bash
+wrangler secret put SOCRATA_APP_KEY_ID --env production
+wrangler secret put SOCRATA_APP_KEY_SECRET --env production
+```
+
+**View logs:**
+```bash
+wrangler tail --env production
+```

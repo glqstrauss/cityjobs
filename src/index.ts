@@ -11,18 +11,9 @@ export default {
     ctx.waitUntil(handleScheduled(env));
   },
 
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    // Manual trigger endpoint for testing
-    if (url.pathname === "/trigger-fetch" && request.method === "POST") {
-      ctx.waitUntil(handleScheduled(env));
-      return new Response(JSON.stringify({ status: "fetch triggered" }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    // Health check
     if (url.pathname === "/health") {
       return new Response(JSON.stringify({ status: "ok" }), {
         headers: { "Content-Type": "application/json" },
