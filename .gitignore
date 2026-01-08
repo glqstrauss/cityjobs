@@ -1,3 +1,17 @@
-local.env
+# Dependencies
 node_modules/
+
+# Environment & secrets
+local.env
+.env
+.env.*
+.dev.vars
+
+# Wrangler
 .wrangler/
+
+# OS
+.DS_Store
+
+# Build
+dist/
