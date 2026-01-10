@@ -29,9 +29,9 @@ A GCP-hosted data pipeline that:
                                  │
                                  ▼
                         ┌─────────────────┐
-                        │ Firebase Hosting│
-                        │ (static site +  │
-                        │  DuckDB WASM)   │
+                        │  Cloud Storage  │
+                        │ (static website │
+                        │  + DuckDB WASM) │
                         └─────────────────┘
 ```
 
@@ -43,10 +43,14 @@ A GCP-hosted data pipeline that:
 | ----------------- | ------------------------------------ | ---------------------------------- |
 | Cloud Functions   | Fetch data + DuckDB processing       | 2M invocations/mo, 400k GB-sec     |
 | Cloud Scheduler   | Daily cron trigger                   | 3 jobs                             |
-| Cloud Storage     | Raw JSON + processed Parquet         | 5GB in US regions                  |
-| Firebase Hosting  | Static site with DuckDB WASM         | 10GB storage, 360MB/day transfer   |
+| Cloud Storage     | Raw JSON + Parquet + static site     | 5GB in US regions                  |
 
 **Note:** All limits are "always free" - no 12-month expiration.
+
+**GCP Configuration:**
+- Project ID: `city-jobs-483916`
+- Region: `us-east1`
+- GCS Bucket: `cityjobs-data`
 
 ---
 
@@ -122,7 +126,7 @@ FROM read_json('raw/latest.json')
 
 ### 2. Web Application
 
-**Hosting**: Firebase Hosting (static files)
+**Hosting**: GCS Static Website Hosting
 
 **Query Engine**: DuckDB WASM (runs entirely in browser)
 
@@ -137,11 +141,13 @@ FROM read_json('raw/latest.json')
 
 **How it works**:
 
-1. Static HTML/JS loads from Firebase Hosting
-2. On page load, fetches `jobs.parquet` from GCS (via public URL or Firebase)
+1. Static HTML/JS loads from GCS bucket (configured as website)
+2. On page load, fetches `jobs.parquet` from same bucket
 3. DuckDB WASM loads the Parquet file
 4. All filtering/sorting/searching runs locally via SQL queries
 5. No server-side API needed
+
+**URL**: `https://storage.googleapis.com/cityjobs-data/index.html` (or custom domain later)
 
 **UI Stack**: Vanilla JS + DuckDB WASM (minimal dependencies)
 
@@ -163,7 +169,6 @@ cityjobs/
 │   ├── app.ts                # DuckDB WASM query logic
 │   └── style.css
 ├── _archive/                 # Old Cloudflare TypeScript code (reference)
-├── firebase.json             # Firebase Hosting config
 ├── SPEC.md                   # This file
 ├── CLAUDE.md                 # Claude Code guidelines
 └── local.env                 # Local secrets (gitignored)
@@ -186,40 +191,51 @@ cityjobs/
 **One-time setup:**
 
 ```bash
-# Create GCP project
-gcloud projects create cityjobs --name="NYC Jobs Pipeline"
-gcloud config set project cityjobs
+# Set project
+gcloud config set project city-jobs-483916
 
 # Enable APIs
 gcloud services enable cloudfunctions.googleapis.com
 gcloud services enable cloudscheduler.googleapis.com
 gcloud services enable secretmanager.googleapis.com
+gcloud services enable run.googleapis.com
 
-# Create GCS bucket
-gsutil mb -l us-central1 gs://cityjobs-data
+# Create GCS bucket (us-east1)
+gsutil mb -l us-east1 gs://cityjobs-data
+
+# Make bucket publicly readable (for static site + data)
+gsutil iam ch allUsers:objectViewer gs://cityjobs-data
+
+# Configure CORS for browser access
+gsutil cors set cors.json gs://cityjobs-data
 
 # Store secrets
-echo -n "your-key-id" | gcloud secrets create SOCRATA_APP_KEY_ID --data-file=-
-echo -n "your-key-secret" | gcloud secrets create SOCRATA_APP_KEY_SECRET --data-file=-
+gcloud secrets create SOCRATA_APP_KEY_ID --data-file=-
+gcloud secrets create SOCRATA_APP_KEY_SECRET --data-file=-
 
 # Deploy Cloud Function (Python)
 gcloud functions deploy cityjobs-fetch \
   --gen2 \
   --runtime python311 \
+  --region us-east1 \
   --trigger-http \
+  --allow-unauthenticated \
   --entry-point main \
   --source ./functions \
+  --set-env-vars GCS_BUCKET=cityjobs-data,GCP_PROJECT=city-jobs-483916 \
   --set-secrets 'SOCRATA_APP_KEY_ID=SOCRATA_APP_KEY_ID:latest,SOCRATA_APP_KEY_SECRET=SOCRATA_APP_KEY_SECRET:latest'
 
-# Create Cloud Scheduler job
+# Create Cloud Scheduler job (daily at 4am UTC)
 gcloud scheduler jobs create http cityjobs-daily \
+  --location us-east1 \
   --schedule "0 4 * * *" \
-  --uri "https://REGION-PROJECT.cloudfunctions.net/cityjobs-fetch" \
+  --uri "https://us-east1-city-jobs-483916.cloudfunctions.net/cityjobs-fetch" \
   --http-method POST
+```
 
-# Initialize Firebase and deploy web app
-firebase init hosting
-firebase deploy
+**Deploy static site (later):**
+```bash
+gsutil -m cp -r web/* gs://cityjobs-data/
 ```
 
 ---
@@ -233,13 +249,14 @@ firebase deploy
 
 **Migration steps:**
 1. [x] Archive TypeScript codebase
-2. [ ] Create skeleton Python Cloud Function
+2. [x] Create skeleton Python Cloud Function
 3. [ ] Set up GCP project and services
-4. [ ] Implement fetch logic in Python
-5. [ ] Implement DuckDB processing (user adds own transforms)
-6. [ ] Build static site with DuckDB WASM
-7. [ ] Deploy to Firebase Hosting
-8. [ ] Decommission Cloudflare resources (R2, Workers)
+4. [ ] Deploy fetch Cloud Function
+5. [ ] Set up Cloud Scheduler
+6. [ ] Implement DuckDB processing (user adds own transforms)
+7. [ ] Build static site with DuckDB WASM
+8. [ ] Deploy static site to GCS
+9. [ ] Decommission Cloudflare resources (R2, Workers)
 
 ---
 
@@ -247,11 +264,14 @@ firebase deploy
 
 - [x] Implement fetch worker (Cloudflare - prototype)
 - [x] Understand data shape and transformation needs
-- [ ] Set up GCP project and services
-- [ ] Port fetch logic to Cloud Function
-- [ ] Implement DuckDB SQL transformations
-- [ ] Output Parquet to GCS
-- [ ] Build static site with DuckDB WASM
-- [ ] Deploy to Firebase Hosting
+- [x] Create skeleton Python Cloud Function
+- [ ] Enable GCP APIs
+- [ ] Create GCS bucket
+- [ ] Set up secrets in Secret Manager
+- [ ] Deploy fetch Cloud Function
 - [ ] Set up Cloud Scheduler cron
+- [ ] Test fetch pipeline end-to-end
+- [ ] Implement DuckDB SQL transformations (user)
+- [ ] Build static site with DuckDB WASM
+- [ ] Deploy static site to GCS
 - [ ] Decommission Cloudflare resources
