@@ -1,17 +1,28 @@
 # Dependencies
 node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.python-version
+uv.lock
 
 # Environment & secrets
 local.env
 .env
 .env.*
-.dev.vars
 
-# Wrangler
-.wrangler/
+# IDE
+.vscode/
+.idea/
 
 # OS
 .DS_Store
 
 # Build
 dist/
+*.egg-info/
+
+# Cloudflare (archived)
+.wrangler/
+.dev.vars

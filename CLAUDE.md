@@ -2,112 +2,110 @@
 
 ## Project Overview
 
-NYC Jobs data pipeline using Cloudflare Workers. Fetches job postings from NYC Open Data (Socrata), stores in R2, processes into D1 database, and serves via web UI.
+NYC Jobs data pipeline hosted on GCP. Fetches job postings from NYC Open Data (Socrata), processes with DuckDB, outputs Parquet, and serves a static web UI with client-side querying via DuckDB WASM.
 
 ## Tech Stack
 
-- **Runtime**: Cloudflare Workers (TypeScript)
-- **Storage**: R2 (raw snapshots), D1 (queryable database)
+- **Backend**: Python on GCP Cloud Functions
+- **Processing**: DuckDB (SQL-based transforms)
+- **Storage**: Google Cloud Storage (raw JSON + processed Parquet)
+- **Scheduling**: Cloud Scheduler
+- **Frontend**: Static site on Firebase Hosting with DuckDB WASM
 - **Data Source**: NYC Open Data Socrata API
-
-## Configuration
-
-All configuration lives in `wrangler.toml`:
-- `[vars]` for non-secret config (URLs, dataset IDs)
-- Secrets via `wrangler secret put` (API keys)
-
-Do not hardcode config values in source files.
 
 ## Project Structure
 
 ```
-src/
-├── index.ts          # Worker entry point
-├── fetch.ts          # Scheduled fetch logic
-├── process.ts        # Data transformation (TODO)
-├── api.ts            # Web API routes (TODO)
-├── types.ts          # Shared TypeScript types
-└── lib/
-    └── socrata.ts    # Socrata API client
-migrations/
-└── *.sql             # D1 schema migrations
+cityjobs/
+├── functions/                # Python Cloud Function
+│   ├── main.py               # Entry point
+│   ├── fetch.py              # Socrata fetch logic
+│   ├── process.py            # DuckDB processing (TODO)
+│   ├── pyproject.toml        # Python dependencies (UV)
+│   └── sql/
+│       └── transform.sql     # DuckDB SQL transforms (TODO)
+├── web/                      # Static frontend (TODO)
+│   ├── index.html
+│   ├── app.ts                # DuckDB WASM queries
+│   └── style.css
+├── SPEC.md                   # Architecture and decisions
+├── CLAUDE.md                 # This file
+└── local.env                 # Local secrets (gitignored)
 ```
 
 ## Conventions
 
-### Code Style
+### Code Style (Python)
+- Python 3.11+
+- Type hints for function signatures
+- Use `logging` module, not print statements
+
+### Code Style (TypeScript - web only)
 - TypeScript strict mode
-- No default exports except worker entry point
-- Prefer explicit types over inference for function signatures
+- Minimal dependencies
 
 ### Commits
 - Commit completed features/fixes, not WIP
 - Use conventional commit style: `feat:`, `fix:`, `chore:`, etc.
 
-### Error Handling
-- Log errors with `console.error()` (Cloudflare Workers logging)
-- Throw on unrecoverable errors, return null/empty for expected missing data
+### Configuration
+- Secrets in GCP Secret Manager (production) or `local.env` (development)
+- Non-secret config as environment variables
+- Do not hardcode config values in source files
 
 ## Commands
 
 ```bash
-npm run dev          # Local development
-npm run deploy       # Deploy to Cloudflare
-npm run db:migrate   # Run D1 migrations
-npx tsc --noEmit     # Type check
+# Setup (using UV)
+cd functions
+uv venv
+uv pip install -e ".[dev]"
+
+# Local development
+source .venv/bin/activate
+python main.py                          # Run locally (requires ../local.env)
+functions-framework --target=main       # Run with Functions Framework
+
+# Generate requirements.txt for Cloud Functions deploy
+uv pip compile pyproject.toml -o requirements.txt
+
+# Deploy
+gcloud functions deploy cityjobs-fetch --runtime python311 --trigger-http --source=./functions
+
+# View logs
+gcloud functions logs read cityjobs-fetch
 ```
 
-## Local Development
+## Open Questions / TODOs
 
-Wrangler uses environment-based configuration (`[env.dev]` and `[env.production]` in wrangler.toml).
+Before proceeding with GCP setup, answer these:
 
-**Start dev server:**
-```bash
-npm run dev
-# or: npx wrangler dev --env dev --remote
-```
+### Authentication
+- [ ] Provide GCP project ID (or choose a name)
+- [ ] Confirm Socrata API credentials location (copy from `local.env` to Secret Manager)
 
-**Test scheduled triggers:**
-```bash
-# In another terminal, trigger the cron handler:
-curl http://localhost:8787/__scheduled?cron=0+4+*+*+*
-```
+### Service Choices
+- [ ] GCS bucket name preference? (default: `cityjobs-data`)
+- [ ] Cloud Function region preference? (default: `us-central1`)
+- [ ] Firebase project - same as GCP project or separate?
 
-**View logs:** Logs appear in the terminal running `wrangler dev`.
+### Processing
+- [ ] Add your own Python dependencies to `requirements.txt`
+- [ ] Implement SQL transforms in `functions/sql/transform.sql`
+- [ ] Decide on Parquet output schema
 
-## Deployment Checklist
+## Migration Status
 
-**One-time setup:**
-1. Create R2 buckets: `wrangler r2 bucket create cityjobs-data` and `cityjobs-data-dev`
-2. Create D1 database: `wrangler d1 create cityjobs-db`
-3. Update `database_id` in wrangler.toml
-4. Run migrations: `npm run db:migrate`
-5. Set secrets: `wrangler secret put SOCRATA_APP_KEY_ID`, etc.
+**From Cloudflare (archived in `_archive/`):**
+- [x] Fetch worker logic - reference for reimplementation
+- [x] Socrata client - rewrite in Python
+- [x] Data shape understanding - documented in SPEC.md
 
-**Deploy:**
-```bash
-npm run deploy
-```
-
-## Production
-
-**URL:** https://cityjobs-production.gstrauss5.workers.dev
-
-**Endpoints:**
-- `GET /health` - Health check
-
-**Scheduled Jobs:**
-- Cron runs daily at 4am UTC (configured in `[env.production.triggers]`)
-- Fetches NYC Jobs data from Socrata API
-- Stores raw snapshots in R2 bucket `cityjobs-data`
-
-**Secrets** (set with `--env production`):
-```bash
-wrangler secret put SOCRATA_APP_KEY_ID --env production
-wrangler secret put SOCRATA_APP_KEY_SECRET --env production
-```
-
-**View logs:**
-```bash
-wrangler tail --env production
-```
+**GCP Implementation:**
+- [ ] Skeleton Python Cloud Function
+- [ ] GCP project setup
+- [ ] Cloud Storage bucket
+- [ ] Secret Manager secrets
+- [ ] Cloud Scheduler cron
+- [ ] DuckDB processing
+- [ ] Firebase Hosting for web UI

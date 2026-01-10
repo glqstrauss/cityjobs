@@ -1,0 +1,25 @@
+-- DuckDB transformation query
+-- TODO: Implement your own transformations
+--
+-- This file is read by process.py and executed against the raw JSON data.
+-- The {input_path} placeholder will be replaced with the GCS path.
+--
+-- Example:
+--
+-- SELECT
+--     job_id,
+--     agency,
+--     business_title,
+--     CAST(salary_range_from AS DOUBLE) as salary_range_from,
+--     CAST(salary_range_to AS DOUBLE) as salary_range_to,
+--     salary_frequency,
+--     -- Normalize to annual salary
+--     CASE salary_frequency
+--         WHEN 'Hourly' THEN CAST(salary_range_from AS DOUBLE) * 2080
+--         WHEN 'Daily' THEN CAST(salary_range_from AS DOUBLE) * 260
+--         ELSE CAST(salary_range_from AS DOUBLE)
+--     END as salary_annual_from,
+--     posting_date,
+--     job_description
+-- FROM read_json('{input_path}', columns={{data: 'JSON[]'}})
+-- UNNEST(data)

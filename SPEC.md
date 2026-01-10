@@ -69,7 +69,7 @@ A GCP-hosted data pipeline that:
 
 **Trigger**: Cloud Scheduler (daily at 4am UTC)
 
-**Runtime**: Node.js 20 with DuckDB
+**Runtime**: Python 3.11 with DuckDB
 
 **Responsibilities**:
 
@@ -147,27 +147,26 @@ FROM read_json('raw/latest.json')
 
 ---
 
-## Project Structure (Proposed)
+## Project Structure
 
 ```
 cityjobs/
-├── functions/
-│   ├── src/
-│   │   ├── index.ts          # Cloud Function entry point
-│   │   ├── fetch.ts          # Socrata fetching logic
-│   │   ├── process.ts        # DuckDB processing
-│   │   └── lib/
-│   │       └── socrata.ts    # Socrata API client
-│   ├── sql/
-│   │   └── transform.sql     # DuckDB transformation queries
-│   ├── package.json
-│   └── tsconfig.json
-├── web/
+├── functions/                # Python Cloud Function
+│   ├── main.py               # Entry point (HTTP handler)
+│   ├── fetch.py              # Socrata fetching logic
+│   ├── process.py            # DuckDB processing (TODO - user implements)
+│   ├── pyproject.toml        # Python dependencies (UV)
+│   └── sql/
+│       └── transform.sql     # DuckDB transformation queries (TODO - user implements)
+├── web/                      # Static frontend (TODO)
 │   ├── index.html
-│   ├── app.js                # DuckDB WASM query logic
+│   ├── app.ts                # DuckDB WASM query logic
 │   └── style.css
+├── _archive/                 # Old Cloudflare TypeScript code (reference)
 ├── firebase.json             # Firebase Hosting config
-└── README.md
+├── SPEC.md                   # This file
+├── CLAUDE.md                 # Claude Code guidelines
+└── local.env                 # Local secrets (gitignored)
 ```
 
 ---
@@ -203,9 +202,10 @@ gsutil mb -l us-central1 gs://cityjobs-data
 echo -n "your-key-id" | gcloud secrets create SOCRATA_APP_KEY_ID --data-file=-
 echo -n "your-key-secret" | gcloud secrets create SOCRATA_APP_KEY_SECRET --data-file=-
 
-# Deploy Cloud Function
+# Deploy Cloud Function (Python)
 gcloud functions deploy cityjobs-fetch \
-  --runtime nodejs20 \
+  --gen2 \
+  --runtime python311 \
   --trigger-http \
   --entry-point main \
   --source ./functions \
@@ -226,23 +226,20 @@ firebase deploy
 
 ## Migration from Cloudflare
 
-**Current state (Cloudflare):**
-- Fetch worker deployed and working
-- Raw snapshots in R2 at `snapshots/raw/`
-- TypeScript transform placeholder (to be replaced)
+**Archived (in `_archive/`):**
+- TypeScript fetch worker code (reference for Python rewrite)
+- Socrata client logic
+- Wrangler configuration
 
 **Migration steps:**
-1. Set up GCP project and services
-2. Port fetch logic to Cloud Function
-3. Implement DuckDB processing with SQL transforms
-4. Build static site with DuckDB WASM
-5. Deploy to Firebase Hosting
-6. Decommission Cloudflare resources
-
-**What can be reused:**
-- Socrata client logic (`src/lib/socrata.ts`)
-- General fetch flow
-- Understanding of data shape
+1. [x] Archive TypeScript codebase
+2. [ ] Create skeleton Python Cloud Function
+3. [ ] Set up GCP project and services
+4. [ ] Implement fetch logic in Python
+5. [ ] Implement DuckDB processing (user adds own transforms)
+6. [ ] Build static site with DuckDB WASM
+7. [ ] Deploy to Firebase Hosting
+8. [ ] Decommission Cloudflare resources (R2, Workers)
 
 ---
 
