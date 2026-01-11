@@ -8,16 +8,12 @@ dependencies = [
     "google-cloud-storage>=2.0.0",
     "google-cloud-secret-manager>=2.0.0",
     "requests>=2.0.0",
+    "duckdb>=1.4.3",
+    "pandas>=2.3.3",
 ]
 
 [project.optional-dependencies]
 dev = ["python-dotenv>=1.0.0"]
-
-# Add your own dependencies below, e.g.:
-# processing = [
-#     "duckdb>=0.9.0",
-#     "pyarrow>=14.0.0",
-# ]
 
 [build-system]
 requires = ["hatchling"]
@@ -29,4 +25,8 @@ packages = ["functions"]
 [dependency-groups]
 dev = [
     "google-api-python-client-stubs>=1.31.0",
+    "ipython>=9.9.0",
+    "pre-commit>=4.0.0",
+    "black>=25.0.0",
+    "shandy-sqlfmt>=0.26.0",
 ]

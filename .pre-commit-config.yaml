@@ -1,0 +1,29 @@
+repos:
+  # uv lock and compile requirements.txt
+  - repo: local
+    hooks:
+      - id: uv-lock
+        name: uv lock
+        entry: uv lock
+        language: system
+        files: ^pyproject\.toml$
+        pass_filenames: false
+
+      - id: uv-pip-compile
+        name: uv pip compile requirements.txt
+        entry: uv pip compile pyproject.toml -o functions/requirements.txt
+        language: system
+        files: ^(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+
+  # Black formatter
+  - repo: https://github.com/psf/black
+    rev: 25.1.0
+    hooks:
+      - id: black
+
+  # SQL formatter
+  - repo: https://github.com/tconbeer/sqlfmt
+    rev: v0.26.0
+    hooks:
+      - id: sqlfmt

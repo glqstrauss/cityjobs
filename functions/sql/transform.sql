@@ -6,42 +6,48 @@
 --
 -- Example:
 --
-with renamed as (
-from raw
-select
-    job_id,
-    agency,
-    posting_type,
-    number_of_positions,
-    business_title,
-    civil_service_title,
-    title_classification,
-    title_code_no,
-    level,
-    job_category,
-    career_level,
-    CAST(salary_range_from AS DOUBLE) as salary_range_from,
-    CAST(salary_range_to AS DOUBLE) as salary_range_to,
-    full_time_part_time_indicator,
-    salary_frequency,
-    work_location,
-    division_work_unit,
-    job_description,
-    minimum_qual_requirements,
-    residency_requirement,
-    posting_date::date as posted_date,
-    strptime(post_until, '%d-%b-%Y')::date as posted_until_date,
-    posting_updated::date as posting_updated_date,
-    process_date::date as processed_date,
-), columns_added as (
-    from renamed
-    select
-        renamed.*,
-        (title_classification = 'Competitive-1') as requires_exam,
-        (full_time_part_time_indicator = 'F') as is_full_time,
-        -- job_category may contain multiple categories each containing spaces concatenated together with spaces...
-        -- Split job_category into array by replacing known categories with delimited versions
-        -- Order matters: longer categories first to avoid partial matches (e.g., "Mental Health" before "Health")
+with
+    renamed as (
+        from raw
+        select
+            job_id,
+            agency,
+            posting_type,
+            number_of_positions,
+            business_title,
+            civil_service_title,
+            title_classification,
+            title_code_no,
+            level,
+            job_category,
+            career_level,
+            cast(salary_range_from as double) as salary_range_from,
+            cast(salary_range_to as double) as salary_range_to,
+            full_time_part_time_indicator,
+            salary_frequency,
+            work_location,
+            division_work_unit,
+            job_description,
+            minimum_qual_requirements,
+            residency_requirement,
+            posting_date::date as posted_date,
+            strptime(post_until, '%d-%b-%Y')::date as posted_until_date,
+            posting_updated::date as posting_updated_date,
+            process_date::date as processed_date,
+    ),
+    columns_added as (
+        from renamed
+        select
+            renamed.*,
+            (title_classification = 'Competitive-1') as requires_exam,
+            (full_time_part_time_indicator = 'F') as is_full_time,
+            -- job_category may contain multiple categories each containing spaces
+            -- concatenated together with spaces...
+            -- Split job_category into array by replacing known categories with
+            -- delimited versions
+            -- Order matters: longer categories first to avoid partial matches (e.g.,
+            -- "Mental Health" before "Health")
+        -- fmt: off
         list_transform(
             list_filter(
                 str_split(
@@ -67,6 +73,8 @@ select
             ),
             x -> trim(x)
         ) as job_categories,
-)
+        -- fmt: on
+    )
 
-from columns_added select *
+from columns_added
+select *

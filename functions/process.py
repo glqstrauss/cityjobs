@@ -58,7 +58,9 @@ def process_jobs(bucket_name: str, raw_path: str) -> str:
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(output_path)
-    blob.upload_from_filename(str(local_output), content_type="application/octet-stream")
+    blob.upload_from_filename(
+        str(local_output), content_type="application/octet-stream"
+    )
     logger.info(f"Uploaded to gs://{bucket_name}/{output_path}")
 
     # Update metadata.json with processedPath

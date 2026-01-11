@@ -132,12 +132,14 @@ def fetch_jobs(bucket_name: str) -> str | None:
     # Update metadata pointer
     metadata_blob = bucket.blob("metadata.json")
     metadata_blob.upload_from_string(
-        json.dumps({
-            "dataUpdatedAt": data_updated_at,
-            "fetchedAt": now,
-            "recordCount": len(jobs),
-            "rawPath": raw_path,
-        }),
+        json.dumps(
+            {
+                "dataUpdatedAt": data_updated_at,
+                "fetchedAt": now,
+                "recordCount": len(jobs),
+                "rawPath": raw_path,
+            }
+        ),
         content_type="application/json",
     )
 

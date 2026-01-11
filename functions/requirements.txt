@@ -17,6 +17,8 @@ cloudevents==1.12.0
     # via functions-framework
 deprecation==2.1.0
     # via cloudevents
+duckdb==1.4.3
+    # via cityjobs (pyproject.toml)
 flask==3.1.2
     # via functions-framework
 functions-framework==3.10.0
@@ -79,10 +81,14 @@ markupsafe==3.0.3
     #   flask
     #   jinja2
     #   werkzeug
+numpy==2.4.1
+    # via pandas
 packaging==25.0
     # via
     #   deprecation
     #   gunicorn
+pandas==2.3.3
+    # via cityjobs (pyproject.toml)
 proto-plus==1.27.0
     # via
     #   google-api-core
@@ -101,6 +107,10 @@ pyasn1==0.6.1
     #   rsa
 pyasn1-modules==0.4.2
     # via google-auth
+python-dateutil==2.9.0.post0
+    # via pandas
+pytz==2025.2
+    # via pandas
 requests==2.32.5
     # via
     #   cityjobs (pyproject.toml)
@@ -108,10 +118,17 @@ requests==2.32.5
     #   google-cloud-storage
 rsa==4.9.1
     # via google-auth
+six==1.17.0
+    # via python-dateutil
 starlette==0.51.0
     # via functions-framework
 typing-extensions==4.15.0
-    # via grpcio
+    # via
+    #   anyio
+    #   grpcio
+    #   starlette
+tzdata==2025.3
+    # via pandas
 urllib3==2.6.3
     # via requests
 uvicorn==0.40.0

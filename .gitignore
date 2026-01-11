@@ -28,4 +28,4 @@ dist/
 .dev.vars
 
 # Temp dir
-./local
+local
