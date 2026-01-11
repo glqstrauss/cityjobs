@@ -26,3 +26,6 @@ dist/
 # Cloudflare (archived)
 .wrangler/
 .dev.vars
+
+# Temp dir
+./local
