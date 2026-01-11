@@ -1,0 +1,97 @@
+/* Custom styles for NYC Jobs */
+
+/* Loading state */
+[aria-busy="true"] {
+  text-align: center;
+  padding: 2rem;
+}
+
+/* Job listing table */
+.job-table {
+  width: 100%;
+}
+
+.job-table tbody tr {
+  cursor: pointer;
+}
+
+.job-table tbody tr:hover {
+  background: var(--pico-secondary-hover-background);
+}
+
+/* Salary display */
+.salary {
+  white-space: nowrap;
+}
+
+/* Categories as tags */
+.categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.category-tag {
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  background: var(--pico-secondary-background);
+  border-radius: 1rem;
+  white-space: nowrap;
+}
+
+/* Search/filter section */
+.filters {
+  margin-bottom: 1.5rem;
+}
+
+.filters fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: end;
+}
+
+.filters .search-input {
+  flex: 2;
+  min-width: 200px;
+}
+
+.filters .filter-select {
+  flex: 1;
+  min-width: 150px;
+}
+
+/* Pagination */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+/* Job detail view */
+.job-detail header {
+  margin-bottom: 1.5rem;
+}
+
+.job-detail .meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  color: var(--pico-muted-color);
+}
+
+.job-detail section {
+  margin-bottom: 2rem;
+}
+
+/* FAQ/Resources styling */
+.content-page h2 {
+  margin-top: 2rem;
+}
+
+.content-page h2:first-child {
+  margin-top: 0;
+}

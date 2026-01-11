@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NYC Jobs</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="container">
+      <nav>
+        <ul>
+          <li><a href="#/" class="contrast"><strong>NYC Jobs</strong></a></li>
+        </ul>
+        <ul>
+          <li><a href="#/jobs">Jobs</a></li>
+          <li><a href="#/faq">FAQ</a></li>
+          <li><a href="#/resources">Resources</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <main class="container" id="app">
+      <p aria-busy="true">Loading...</p>
+    </main>
+
+    <footer class="container">
+      <small>
+        Data from <a href="https://data.cityofnewyork.us" target="_blank">NYC Open Data</a>.
+        Updated daily.
+      </small>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

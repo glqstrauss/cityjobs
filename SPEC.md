@@ -1,4 +1,4 @@
-# NYC Jobs Data Pipeline - Ops Spec
+# NYC Jobs Data Pipeline - Spec
 
 ## Overview
 
@@ -19,35 +19,36 @@ A GCP-hosted data pipeline that:
 │ Cloud Scheduler │────▶│ Cloud Function  │────▶│  Cloud Storage  │
 │  (daily cron)   │     │ (fetch + process)│    │ (raw JSON)      │
 └─────────────────┘     └────────┬────────┘     └─────────────────┘
-                                 │
-                                 │ DuckDB transforms
-                                 ▼
-                        ┌─────────────────┐
-                        │  Cloud Storage  │
-                        │   (Parquet)     │
-                        └────────┬────────┘
-                                 │
-                                 ▼
-                        ┌─────────────────┐
-                        │  Cloud Storage  │
-                        │ (static website │
-                        │  + DuckDB WASM) │
-                        └─────────────────┘
+                                │
+                                │ DuckDB transforms
+                                ▼
+                       ┌─────────────────┐
+                       │  Cloud Storage  │
+                       │   (Parquet)     │
+                       └────────┬────────┘
+                                │
+                                ▼
+                       ┌─────────────────┐
+                       │  Cloud Storage  │
+                       │ (static website │
+                       │  + DuckDB WASM) │
+                       └─────────────────┘
 ```
 
 ---
 
 ## GCP Services Used
 
-| Service           | Purpose                              | Free Tier Limits (Always Free)     |
-| ----------------- | ------------------------------------ | ---------------------------------- |
-| Cloud Functions   | Fetch data + DuckDB processing       | 2M invocations/mo, 400k GB-sec     |
-| Cloud Scheduler   | Daily cron trigger                   | 3 jobs                             |
-| Cloud Storage     | Raw JSON + Parquet + static site     | 5GB in US regions                  |
+| Service         | Purpose                          | Free Tier Limits (Always Free) |
+| --------------- | -------------------------------- | ------------------------------ |
+| Cloud Functions | Fetch data + DuckDB processing   | 2M invocations/mo, 400k GB-sec |
+| Cloud Scheduler | Daily cron trigger               | 3 jobs                         |
+| Cloud Storage   | Raw JSON + Parquet + static site | 5GB in US regions              |
 
 **Note:** All limits are "always free" - no 12-month expiration.
 
 **GCP Configuration:**
+
 - Project ID: `city-jobs-483916`
 - Region: `us-east1`
 - GCS Bucket: `cityjobs-data`
@@ -82,6 +83,7 @@ A GCP-hosted data pipeline that:
 3. Store raw JSON snapshot in GCS
 4. Run DuckDB SQL transformations
 5. Export processed data as Parquet to GCS
+6. Update metadata.json with processedPath
 
 **GCS Storage Schema**:
 
@@ -91,36 +93,56 @@ gs://cityjobs-data/
 │   ├── 2025-01-07T06:00:00Z.json
 │   └── ...
 ├── processed/
-│   └── jobs.parquet          # Latest processed data (overwritten)
-└── metadata.json             # Last update timestamps
+│   └── 2025-01-07T06:00:00Z.parquet
+├── metadata.json             # Last update timestamps + paths
+└── index.html                # Static site entry point
 ```
 
-**DuckDB Transformations** (SQL):
+**Processed Data Schema**:
 
-```sql
--- Example transformations (to be finalized)
-SELECT
-  job_id,
-  agency,
-  business_title,
-  CAST(salary_range_from AS DOUBLE) as salary_range_from,
-  CAST(salary_range_to AS DOUBLE) as salary_range_to,
-  salary_frequency,
-  -- Normalize to annual salary
-  CASE salary_frequency
-    WHEN 'Hourly' THEN CAST(salary_range_from AS DOUBLE) * 2080
-    WHEN 'Daily' THEN CAST(salary_range_from AS DOUBLE) * 260
-    ELSE CAST(salary_range_from AS DOUBLE)
-  END as salary_annual_from,
-  -- ... other columns and transforms
-FROM read_json('raw/latest.json')
-```
+| Column                    | Type      | Description                  |
+| ------------------------- | --------- | ---------------------------- |
+| job_id                    | VARCHAR   | Unique job identifier        |
+| agency                    | VARCHAR   | NYC agency name              |
+| posting_type              | VARCHAR   | Internal/External            |
+| number_of_positions       | VARCHAR   | Number of openings           |
+| business_title            | VARCHAR   | Job title                    |
+| civil_service_title       | VARCHAR   | Official civil service title |
+| title_classification      | VARCHAR   | Competitive/Non-Competitive  |
+| level                     | VARCHAR   | Position level               |
+| job_category              | VARCHAR   | Raw category string          |
+| job_categories            | VARCHAR[] | Parsed category array        |
+| career_level              | VARCHAR   | Entry/Experienced/Executive  |
+| salary_range_from         | DOUBLE    | Minimum salary               |
+| salary_range_to           | DOUBLE    | Maximum salary               |
+| salary_frequency          | VARCHAR   | Annual/Hourly/Daily          |
+| is_full_time              | BOOLEAN   | Full-time indicator          |
+| requires_exam             | BOOLEAN   | Civil service exam required  |
+| work_location             | VARCHAR   | Office location              |
+| division_work_unit        | VARCHAR   | Department/division          |
+| job_description           | VARCHAR   | Full description text        |
+| minimum_qual_requirements | VARCHAR   | Required qualifications      |
+| residency_requirement     | VARCHAR   | NYC residency rules          |
+| posted_date               | DATE      | Original posting date        |
+| posted_until_date         | DATE      | Application deadline         |
+| posting_updated_date      | DATE      | Last update date             |
 
-**Error Handling**:
+**Job Categories** (14 total):
 
-- Cloud Functions has built-in retry on failure
-- Logs to Cloud Logging
-- Alert via Cloud Monitoring (optional)
+- Administration & Human Resources
+- Building Operations & Maintenance
+- Communications & Intergovernmental Affairs
+- Constituent Services & Community Programs
+- Engineering, Architecture, & Planning
+- Finance, Accounting, & Procurement
+- Green Jobs
+- Health
+- Legal Affairs
+- Mental Health
+- Policy, Research & Analysis
+- Public Safety, Inspections, & Enforcement
+- Social Services
+- Technology, Data & Innovation
 
 ---
 
@@ -130,26 +152,78 @@ FROM read_json('raw/latest.json')
 
 **Query Engine**: DuckDB WASM (runs entirely in browser)
 
-**Features**:
+**Stack**: Vanilla TypeScript + DuckDB WASM (minimal dependencies)
 
-- Browse all job postings in paginated table
-- Filter by Agency, Salary range, Job Category
-- Sort by columns
-- Full-text search
-- View job details
-- Export filtered results to CSV
+**URL**: `https://storage.googleapis.com/cityjobs-data/index.html`
 
-**How it works**:
+#### Views/Routes
 
-1. Static HTML/JS loads from GCS bucket (configured as website)
-2. On page load, fetches `jobs.parquet` from same bucket
-3. DuckDB WASM loads the Parquet file
+The app is a single-page application with hash-based routing:
+
+| Route            | View       | Description                    |
+| ---------------- | ---------- | ------------------------------ |
+| `#/` or `#/jobs` | Jobs       | Main job search and listing    |
+| `#/jobs/:id`     | Job Detail | Individual job posting details |
+| `#/faq`          | FAQ        | Frequently asked questions     |
+| `#/resources`    | Resources  | Additional resources and links |
+
+#### Jobs View
+
+Primary view for searching and browsing jobs.
+
+**Search/Filter Options**:
+
+- Text search (searches title, description, agency)
+- Agency dropdown
+- Category multi-select
+- Salary range slider
+- Full-time/Part-time toggle
+- Career level filter
+
+**Results Display**:
+
+- Paginated table with sortable columns
+- Columns: Title, Agency, Salary, Posted Date, Category
+- Click row to view details
+
+#### Job Detail View
+
+Shows full job posting information:
+
+- Title, agency, location
+- Full description
+- Qualifications
+- Salary range
+- How to apply
+- Link to official posting
+
+#### FAQ View
+
+Static content answering common questions:
+
+- What is this site?
+- Where does the data come from?
+- How often is it updated?
+- How do I apply for a job?
+- What does "Competitive" mean?
+- What are civil service exams?
+
+#### Resources View
+
+Links to external resources:
+
+- NYC Jobs official site
+- Civil service exam schedules
+- NYC agency directory
+- Career resources
+
+#### How It Works
+
+1. Static HTML/JS loads from GCS bucket
+2. On page load, fetches latest Parquet from `metadata.json` path
+3. DuckDB WASM loads the Parquet file into memory
 4. All filtering/sorting/searching runs locally via SQL queries
 5. No server-side API needed
-
-**URL**: `https://storage.googleapis.com/cityjobs-data/index.html` (or custom domain later)
-
-**UI Stack**: Vanilla JS + DuckDB WASM (minimal dependencies)
 
 ---
 
@@ -157,18 +231,28 @@ FROM read_json('raw/latest.json')
 
 ```
 cityjobs/
+├── pyproject.toml            # Python dependencies (UV)
+├── .pre-commit-config.yaml   # Pre-commit hooks
 ├── functions/                # Python Cloud Function
 │   ├── main.py               # Entry point (HTTP handler)
 │   ├── fetch.py              # Socrata fetching logic
-│   ├── process.py            # DuckDB processing (TODO - user implements)
-│   ├── pyproject.toml        # Python dependencies (UV)
+│   ├── process.py            # DuckDB processing
+│   ├── requirements.txt      # Generated from pyproject.toml
 │   └── sql/
-│       └── transform.sql     # DuckDB transformation queries (TODO - user implements)
-├── web/                      # Static frontend (TODO)
+│       └── transform.sql     # DuckDB transformation queries
+├── web/                      # Static frontend
 │   ├── index.html
-│   ├── app.ts                # DuckDB WASM query logic
+│   ├── src/
+│   │   ├── main.ts           # Entry point
+│   │   ├── router.ts         # Hash-based routing
+│   │   ├── db.ts             # DuckDB WASM wrapper
+│   │   └── views/
+│   │       ├── jobs.ts
+│   │       ├── job-detail.ts
+│   │       ├── faq.ts
+│   │       └── resources.ts
 │   └── style.css
-├── _archive/                 # Old Cloudflare TypeScript code (reference)
+├── cors.json                 # GCS CORS configuration
 ├── SPEC.md                   # This file
 ├── CLAUDE.md                 # Claude Code guidelines
 └── local.env                 # Local secrets (gitignored)
@@ -178,100 +262,64 @@ cityjobs/
 
 ## Environment Variables / Secrets
 
-| Variable              | Description                      | Storage            |
-| --------------------- | -------------------------------- | ------------------ |
-| `SOCRATA_APP_KEY_ID`  | Socrata API key ID               | Secret Manager     |
-| `SOCRATA_APP_KEY_SECRET` | Socrata API key secret        | Secret Manager     |
-| `GCS_BUCKET`          | Cloud Storage bucket name        | Environment var    |
+| Variable                 | Description               | Storage         |
+| ------------------------ | ------------------------- | --------------- |
+| `SOCRATA_APP_KEY_ID`     | Socrata API key ID        | Secret Manager  |
+| `SOCRATA_APP_KEY_SECRET` | Socrata API key secret    | Secret Manager  |
+| `GCS_BUCKET`             | Cloud Storage bucket name | Environment var |
 
 ---
 
 ## Deployment
 
-**One-time setup:**
+**Cloud Function:**
 
 ```bash
-# Set project
-gcloud config set project city-jobs-483916
-
-# Enable APIs
-gcloud services enable cloudfunctions.googleapis.com
-gcloud services enable cloudscheduler.googleapis.com
-gcloud services enable secretmanager.googleapis.com
-gcloud services enable run.googleapis.com
-
-# Create GCS bucket (us-east1)
-gsutil mb -l us-east1 gs://cityjobs-data
-
-# Make bucket publicly readable (for static site + data)
-gsutil iam ch allUsers:objectViewer gs://cityjobs-data
-
-# Configure CORS for browser access
-gsutil cors set cors.json gs://cityjobs-data
-
-# Store secrets
-gcloud secrets create SOCRATA_APP_KEY_ID --data-file=-
-gcloud secrets create SOCRATA_APP_KEY_SECRET --data-file=-
-
-# Deploy Cloud Function (Python)
 gcloud functions deploy cityjobs-fetch \
-  --gen2 \
-  --runtime python311 \
-  --region us-east1 \
-  --trigger-http \
-  --allow-unauthenticated \
-  --entry-point main \
-  --source ./functions \
+  --gen2 --runtime python311 --region us-east1 \
+  --trigger-http --no-allow-unauthenticated \
+  --entry-point main --source ./functions \
   --set-env-vars GCS_BUCKET=cityjobs-data,GCP_PROJECT=city-jobs-483916 \
   --set-secrets 'SOCRATA_APP_KEY_ID=SOCRATA_APP_KEY_ID:latest,SOCRATA_APP_KEY_SECRET=SOCRATA_APP_KEY_SECRET:latest'
-
-# Create Cloud Scheduler job (daily at 4am UTC)
-gcloud scheduler jobs create http cityjobs-daily \
-  --location us-east1 \
-  --schedule "0 4 * * *" \
-  --uri "https://us-east1-city-jobs-483916.cloudfunctions.net/cityjobs-fetch" \
-  --http-method POST
 ```
 
-**Deploy static site (later):**
+**Static site:**
+
 ```bash
-gsutil -m cp -r web/* gs://cityjobs-data/
+# Build (if using bundler)
+cd web && npm run build
+
+# Deploy to GCS
+gsutil -m cp -r web/dist/* gs://cityjobs-data/
 ```
 
 ---
 
-## Migration from Cloudflare
+## Status
 
-**Archived (in `_archive/`):**
-- TypeScript fetch worker code (reference for Python rewrite)
-- Socrata client logic
-- Wrangler configuration
+**Completed:**
 
-**Migration steps:**
-1. [x] Archive TypeScript codebase
-2. [x] Create skeleton Python Cloud Function
-3. [ ] Set up GCP project and services
-4. [ ] Deploy fetch Cloud Function
-5. [ ] Set up Cloud Scheduler
-6. [ ] Implement DuckDB processing (user adds own transforms)
-7. [ ] Build static site with DuckDB WASM
-8. [ ] Deploy static site to GCS
-9. [ ] Decommission Cloudflare resources (R2, Workers)
+- [x] GCP project setup (APIs, bucket, secrets)
+- [x] Cloud Function fetch pipeline
+- [x] Cloud Scheduler cron (4am UTC)
+- [x] DuckDB SQL transformations
+- [x] Parquet output to GCS
+- [x] Pre-commit hooks (uv, black, sqlfmt)
+- [x] Web UI scaffolding (Vite + TypeScript + Pico CSS)
+- [x] DuckDB WASM integration (loads parquet from GCS)
+- [x] Hash-based router
+- [x] Views: Jobs list, Job detail, FAQ, Resources
+
+**In Progress:**
+
+- [ ] QA and bug fixes for web UI
 
 ---
 
-## Next Steps
+## QA TODOs
 
-- [x] Implement fetch worker (Cloudflare - prototype)
-- [x] Understand data shape and transformation needs
-- [x] Create skeleton Python Cloud Function
-- [ ] Enable GCP APIs
-- [ ] Create GCS bucket
-- [ ] Set up secrets in Secret Manager
-- [ ] Deploy fetch Cloud Function
-- [ ] Set up Cloud Scheduler cron
-- [ ] Test fetch pipeline end-to-end
-- [ ] Implement DuckDB SQL transformations (user)
-- [ ] Build static site with DuckDB WASM
-- [ ] Deploy static site to GCS
-- [ ] Decommission Cloudflare resources
+Issues found during testing (fill in below):
+
+- [ ]
+- [ ]
+- [ ]

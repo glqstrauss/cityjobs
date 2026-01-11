@@ -10,7 +10,7 @@ NYC Jobs data pipeline hosted on GCP. Fetches job postings from NYC Open Data (S
 - **Processing**: DuckDB (SQL-based transforms)
 - **Storage**: Google Cloud Storage (raw JSON + processed Parquet + static site)
 - **Scheduling**: Cloud Scheduler
-- **Frontend**: GCS static website hosting with DuckDB WASM
+- **Frontend**: Vanilla TypeScript + DuckDB WASM
 - **Data Source**: NYC Open Data Socrata API
 
 ## GCP Configuration
@@ -26,22 +26,21 @@ NYC Jobs data pipeline hosted on GCP. Fetches job postings from NYC Open Data (S
 ```
 cityjobs/
 ├── pyproject.toml            # Python dependencies (UV)
-├── .venv/                    # Virtual environment (gitignored)
+├── .pre-commit-config.yaml   # Pre-commit hooks (uv, black, sqlfmt)
 ├── functions/                # Python Cloud Function (deployment unit)
 │   ├── main.py               # Entry point
 │   ├── fetch.py              # Socrata fetch logic
-│   ├── process.py            # DuckDB processing (TODO)
-│   ├── requirements.txt      # Generated from pyproject.toml (for deployment)
+│   ├── process.py            # DuckDB processing
+│   ├── requirements.txt      # Generated from pyproject.toml
 │   └── sql/
-│       └── transform.sql     # DuckDB SQL transforms (TODO)
-├── web/                      # Static frontend (TODO)
+│       └── transform.sql     # DuckDB SQL transforms
+├── web/                      # Static frontend
 │   ├── index.html
-│   ├── app.ts                # DuckDB WASM queries
+│   ├── src/                  # TypeScript source
 │   └── style.css
 ├── cors.json                 # GCS CORS configuration
 ├── SPEC.md                   # Architecture and decisions
-├── CLAUDE.md                 # This file
-└── local.env                 # Local secrets (gitignored)
+└── CLAUDE.md                 # This file
 ```
 
 ## Conventions
@@ -51,11 +50,18 @@ cityjobs/
 - Python 3.11+
 - Type hints for function signatures
 - Use `logging` module, not print statements
+- Formatted with `black`
 
-### Code Style (TypeScript - web only)
+### Code Style (TypeScript)
 
 - TypeScript strict mode
 - Minimal dependencies
+- Vanilla JS where possible
+
+### Code Style (SQL)
+
+- Formatted with `sqlfmt`
+- Use `-- fmt: off` / `-- fmt: on` for blocks that shouldn't be formatted
 
 ### Commits
 
@@ -66,34 +72,26 @@ cityjobs/
 
 - Secrets in GCP Secret Manager (production) or `local.env` (development)
 - Non-secret config as environment variables
-- Do not hardcode config values in source files
 
 ## Local Development
 
 ```bash
 # Setup (using UV) - run from project root
-uv sync --all-extras
+uv sync
 
-# Run locally
+# Activate environment
 source .venv/bin/activate
-cd functions
-python main.py                          # Requires ../local.env
-functions-framework --target=main       # Run with Functions Framework
+
+# Run Cloud Function locally
+cd functions && python main.py
+
+# Run pre-commit
+pre-commit run --all-files
 ```
 
 ## Maintenance Operations
 
-### Regenerate requirements.txt from pyproject.toml
-
-Cloud Functions requires `requirements.txt`. After updating `pyproject.toml`, run from project root:
-
-```bash
-uv pip compile pyproject.toml -o functions/requirements.txt
-```
-
 ### Redeploy Cloud Function
-
-After code changes:
 
 ```bash
 gcloud functions deploy cityjobs-fetch \
@@ -104,26 +102,7 @@ gcloud functions deploy cityjobs-fetch \
   --set-secrets 'SOCRATA_APP_KEY_ID=SOCRATA_APP_KEY_ID:latest,SOCRATA_APP_KEY_SECRET=SOCRATA_APP_KEY_SECRET:latest'
 ```
 
-### Update Cloud Scheduler
-
-Change schedule or other settings:
-
-```bash
-# Update schedule (e.g., to 5am UTC)
-gcloud scheduler jobs update http cityjobs-daily \
-  --location us-east1 \
-  --schedule "0 5 * * *"
-
-# Pause the schedule
-gcloud scheduler jobs pause cityjobs-daily --location us-east1
-
-# Resume the schedule
-gcloud scheduler jobs resume cityjobs-daily --location us-east1
-```
-
 ### Manually Trigger Fetch
-
-The function is protected (not publicly accessible). Use the scheduler to trigger:
 
 ```bash
 gcloud scheduler jobs run cityjobs-daily --location us-east1
@@ -132,67 +111,36 @@ gcloud scheduler jobs run cityjobs-daily --location us-east1
 ### View Logs
 
 ```bash
-# Recent function logs
 gcloud functions logs read cityjobs-fetch --region us-east1 --limit 50
-
-# Detailed Cloud Run logs (includes HTTP request info)
-gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=cityjobs-fetch" --limit 20
 ```
 
 ### Check GCS Data
 
 ```bash
-# View bucket contents
 gsutil ls gs://cityjobs-data/
-gsutil ls gs://cityjobs-data/raw/
-
-# View metadata
 gsutil cat gs://cityjobs-data/metadata.json
-
-# Download a snapshot
-gsutil cp gs://cityjobs-data/raw/FILENAME.json ./local-copy.json
 ```
 
-### Update Secrets
+### Deploy Static Site
 
 ```bash
-# Create new version of a secret
-echo -n "new-value" | gcloud secrets versions add SOCRATA_APP_KEY_ID --data-file=-
-
-# Function will automatically use latest version on next cold start
-# Force restart by redeploying or waiting for instance to scale down
+cd web && npm run build
+gsutil -m cp -r dist/* gs://cityjobs-data/
 ```
 
-### Update CORS Configuration
-
-After editing `cors.json`:
+## Web Development
 
 ```bash
-gsutil cors set cors.json gs://cityjobs-data
+cd web
+npm install      # First time setup
+npm run dev      # Start dev server at http://localhost:5173
+npm run build    # Build for production
 ```
 
-## TODOs (User)
+**Stack:** Vite + TypeScript + Pico CSS + DuckDB WASM
 
-- [ ] Add DuckDB/PyArrow dependencies to `pyproject.toml`
-- [ ] Implement `process.py` with DuckDB logic
-- [ ] Write SQL transforms in `sql/transform.sql`
-- [ ] Build web UI with DuckDB WASM
-
-## Migration Status
-
-**From Cloudflare (archived in `_archive/`):**
-
-- [x] Fetch worker logic - reference for reimplementation
-- [x] Socrata client - rewritten in Python
-- [x] Data shape understanding - documented in SPEC.md
-
-**GCP Implementation:**
-
-- [x] Skeleton Python Cloud Function
-- [x] GCP project setup (APIs enabled)
-- [x] Cloud Storage bucket (public read, CORS)
-- [x] Secret Manager secrets
-- [x] Deploy Cloud Function (protected)
-- [x] Cloud Scheduler cron (4am UTC, authenticated)
-- [ ] DuckDB processing (user implements)
-- [ ] GCS static site hosting (user implements)
+**Structure:**
+- `src/main.ts` - Entry point
+- `src/db.ts` - DuckDB WASM wrapper (loads parquet from GCS)
+- `src/router.ts` - Hash-based SPA router
+- `src/views/` - View components (jobs, job-detail, faq, resources)
