@@ -25,12 +25,13 @@ NYC Jobs data pipeline hosted on GCP. Fetches job postings from NYC Open Data (S
 
 ```
 cityjobs/
-├── functions/                # Python Cloud Function
+├── pyproject.toml            # Python dependencies (UV)
+├── .venv/                    # Virtual environment (gitignored)
+├── functions/                # Python Cloud Function (deployment unit)
 │   ├── main.py               # Entry point
 │   ├── fetch.py              # Socrata fetch logic
 │   ├── process.py            # DuckDB processing (TODO)
-│   ├── pyproject.toml        # Python dependencies (UV)
-│   ├── requirements.txt      # Generated from pyproject.toml
+│   ├── requirements.txt      # Generated from pyproject.toml (for deployment)
 │   └── sql/
 │       └── transform.sql     # DuckDB SQL transforms (TODO)
 ├── web/                      # Static frontend (TODO)
@@ -70,13 +71,12 @@ cityjobs/
 ## Local Development
 
 ```bash
-# Setup (using UV)
-cd functions
-uv venv
-uv pip install -e ".[dev]"
+# Setup (using UV) - run from project root
+uv sync --all-extras
 
 # Run locally
 source .venv/bin/activate
+cd functions
 python main.py                          # Requires ../local.env
 functions-framework --target=main       # Run with Functions Framework
 ```
@@ -85,11 +85,10 @@ functions-framework --target=main       # Run with Functions Framework
 
 ### Regenerate requirements.txt from pyproject.toml
 
-Cloud Functions requires `requirements.txt`. After updating `pyproject.toml`:
+Cloud Functions requires `requirements.txt`. After updating `pyproject.toml`, run from project root:
 
 ```bash
-cd functions
-uv pip compile pyproject.toml -o requirements.txt
+uv pip compile pyproject.toml -o functions/requirements.txt
 ```
 
 ### Redeploy Cloud Function

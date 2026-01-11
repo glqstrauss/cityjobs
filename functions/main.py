@@ -13,7 +13,7 @@ from flask import Request
 from fetch import fetch_jobs
 from process import process_jobs
 
-logging.basicConfig(level=logging.INFO)
+logging.getLogger().setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -53,6 +53,7 @@ def main(request: Request) -> tuple[str, int]:
 # For local development
 if __name__ == "__main__":
     from dotenv import load_dotenv
+
     load_dotenv("../local.env")
 
     # Simulate HTTP request
