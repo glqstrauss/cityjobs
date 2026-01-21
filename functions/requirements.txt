@@ -81,6 +81,8 @@ markupsafe==3.0.3
     #   flask
     #   jinja2
     #   werkzeug
+mashumaro==3.17
+    # via cityjobs (pyproject.toml)
 numpy==2.4.1
     # via pandas
 packaging==25.0
@@ -126,6 +128,7 @@ typing-extensions==4.15.0
     # via
     #   anyio
     #   grpcio
+    #   mashumaro
     #   starlette
 tzdata==2025.3
     # via pandas

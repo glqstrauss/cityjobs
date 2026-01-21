@@ -93,54 +93,15 @@ def get_last_metadata(bucket: storage.Bucket) -> dict | None:
     return json.loads(blob.download_as_text())
 
 
-def fetch_jobs(bucket_name: str) -> str | None:
-    """
-    Fetch jobs from Socrata and store in GCS.
-
-    Returns the GCS path of the raw JSON file, or None if no new data.
-    """
-    storage_client = storage.Client()
-    bucket = storage_client.bucket(bucket_name)
-
-    # Check if data has been updated
-    logger.info("Checking dataset metadata...")
-    metadata = get_dataset_metadata()
-    data_updated_at = metadata.get("dataUpdatedAt")
-
-    last_metadata = get_last_metadata(bucket)
-    if last_metadata and last_metadata.get("dataUpdatedAt") == data_updated_at:
-        logger.info(f"No new data since {data_updated_at}")
-        return None
-
-    # Fetch all records
+def fetch_jobs(raw_blob: storage.Blob) -> str | None:
+    """Fetch jobs from Socrata and store in GCS."""
     logger.info("Fetching all job records...")
     auth = get_socrata_auth()
     jobs = fetch_all_jobs(auth)
     logger.info(f"Fetched {len(jobs)} total records")
 
-    # Store raw JSON
-    now = datetime.now(timezone.utc).isoformat()
-    raw_path = f"raw/{now}.json"
-
-    raw_blob = bucket.blob(raw_path)
     raw_blob.upload_from_string(
-        json.dumps({"metadata": metadata, "data": jobs}, indent=2),
+        json.dumps(jobs, indent=2),
         content_type="application/json",
     )
-    logger.info(f"Stored raw snapshot: gs://{bucket_name}/{raw_path}")
-
-    # Update metadata pointer
-    metadata_blob = bucket.blob("metadata.json")
-    metadata_blob.upload_from_string(
-        json.dumps(
-            {
-                "dataUpdatedAt": data_updated_at,
-                "fetchedAt": now,
-                "recordCount": len(jobs),
-                "rawPath": raw_path,
-            }
-        ),
-        content_type="application/json",
-    )
-
-    return raw_path
+    logger.info(f"Stored raw snapshot: {raw_blob.name}")
