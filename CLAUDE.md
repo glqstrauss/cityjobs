@@ -28,7 +28,8 @@ cityjobs/
 ├── pyproject.toml            # Python dependencies (UV)
 ├── .pre-commit-config.yaml   # Pre-commit hooks (uv, black, sqlfmt)
 ├── functions/                # Python Cloud Function (deployment unit)
-│   ├── main.py               # Entry point
+│   ├── main.py               # Entry point, orchestration
+│   ├── models.py             # JobState dataclass (mashumaro)
 │   ├── fetch.py              # Socrata fetch logic
 │   ├── process.py            # DuckDB processing
 │   ├── requirements.txt      # Generated from pyproject.toml
@@ -98,6 +99,7 @@ gcloud functions deploy cityjobs-fetch \
   --gen2 --runtime python311 --region us-east1 \
   --trigger-http --no-allow-unauthenticated \
   --entry-point main --source ./functions \
+  --memory 1GB \
   --set-env-vars GCS_BUCKET=cityjobs-data,GCP_PROJECT=city-jobs-483916 \
   --set-secrets 'SOCRATA_APP_KEY_ID=SOCRATA_APP_KEY_ID:latest,SOCRATA_APP_KEY_SECRET=SOCRATA_APP_KEY_SECRET:latest'
 ```

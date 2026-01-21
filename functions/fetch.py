@@ -84,15 +84,6 @@ def fetch_all_jobs(auth: tuple[str, str] | None) -> list[dict]:
     return all_records
 
 
-def get_last_metadata(bucket: storage.Bucket) -> dict | None:
-    """Get metadata from last fetch."""
-    blob = bucket.blob("metadata.json")
-    if not blob.exists():
-        return None
-
-    return json.loads(blob.download_as_text())
-
-
 def fetch_jobs(raw_blob: storage.Blob) -> str | None:
     """Fetch jobs from Socrata and store in GCS."""
     logger.info("Fetching all job records...")
