@@ -318,8 +318,23 @@ gsutil -m cp -r web/dist/* gs://cityjobs-data/
 
 ## QA TODOs
 
-Issues found during testing (fill in below):
+### Quick Wins
+- [ ] Fix "Invalid Date" display - date parsing issue
+- [ ] Fix job link URLs - construct cityjobs.nyc.gov format in DuckDB transform
+- [ ] Table CSS: smaller font, horizontal scroll, better density
+- [ ] Show actual last updated date from metadata.json `source_updated_at`
 
-- [ ]
-- [ ]
-- [ ]
+### TanStack Table Integration
+Replace current table with TanStack Table (headless) for:
+- [ ] Column sorting (wired to DuckDB ORDER BY)
+- [ ] Column visibility toggle (show/hide columns)
+- [ ] Dynamic filtering on all fields (wired to DuckDB WHERE)
+- [ ] Better pagination controls
+
+Library: `@tanstack/table-core` (~15kb, vanilla JS)
+Approach: TanStack manages UI state, DuckDB executes queries
+
+### Job Link Format
+Pattern: `https://cityjobs.nyc.gov/job/{slugified-title}-in-{location}-jid-{job_id}`
+Example: `https://cityjobs.nyc.gov/job/application-developer-for-capital-integrated-data-solutions-in-queens-jid-38231`
+Generate in SQL transform as `job_url` column.

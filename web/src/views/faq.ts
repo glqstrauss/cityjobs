@@ -1,5 +1,17 @@
+import { getSourceUpdatedAt } from "../db";
+
 function getApp(): HTMLElement {
   return document.getElementById("app")!;
+}
+
+function formatLastUpdated(): string {
+  const date = getSourceUpdatedAt();
+  if (!date) return "periodically";
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 export function renderFaq(): void {
@@ -32,8 +44,8 @@ export function renderFaq(): void {
       <section>
         <h2>How often is it updated?</h2>
         <p>
-          Job listings are refreshed daily from NYC Open Data. The source dataset is
-          typically updated every weekday by city staff.
+          Job listings were last updated on <strong>${formatLastUpdated()}</strong>.
+          The source dataset is typically updated weekly.
         </p>
       </section>
 

@@ -7,8 +7,25 @@
 }
 
 /* Job listing table */
+.table-container {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
 .job-table {
   width: 100%;
+  font-size: 0.875rem;
+}
+
+.job-table th,
+.job-table td {
+  padding: 0.5rem 0.75rem;
+  white-space: nowrap;
+}
+
+.job-table td:first-child {
+  white-space: normal;
+  min-width: 250px;
 }
 
 .job-table tbody tr {

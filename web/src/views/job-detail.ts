@@ -1,4 +1,4 @@
-import { getJob, Job } from "../db";
+import { getJob, getJobUrl, Job } from "../db";
 
 function getApp(): HTMLElement {
   return document.getElementById("app")!;
@@ -131,7 +131,7 @@ export async function renderJobDetail(jobId: string): Promise<void> {
 
       <footer>
         <a
-          href="https://cityjobs.nyc.gov/jobs/${escapeHtml(job.job_id)}"
+          href="${getJobUrl(job)}"
           target="_blank"
           role="button"
         >

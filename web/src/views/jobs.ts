@@ -93,19 +93,21 @@ async function loadResults(): Promise<void> {
       ${
         rows.length > 0
           ? `
-        <table class="job-table">
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Agency</th>
-              <th>Salary</th>
-              <th>Posted</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.map((job) => renderJobRow(job)).join("")}
-          </tbody>
-        </table>
+        <div class="table-container">
+          <table class="job-table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Agency</th>
+                <th>Salary</th>
+                <th>Posted</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((job) => renderJobRow(job)).join("")}
+            </tbody>
+          </table>
+        </div>
 
         <div class="pagination">
           <button id="prev-page" ${state.page === 0 ? "disabled" : ""}>Previous</button>

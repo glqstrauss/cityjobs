@@ -6,6 +6,7 @@ const BUCKET_URL = "https://storage.googleapis.com/cityjobs-data";
 
 let db: duckdb.AsyncDuckDB | null = null;
 let conn: duckdb.AsyncDuckDBConnection | null = null;
+let sourceUpdatedAt: Date | null = null;
 
 export async function initDb(): Promise<void> {
   // Initialize DuckDB WASM with local bundles (Vite handles the URLs)
@@ -25,6 +26,11 @@ export async function initDb(): Promise<void> {
     throw new Error("No processed_path in metadata.json");
   }
 
+  // Store source updated date
+  if (metadata.source_updated_at) {
+    sourceUpdatedAt = new Date(metadata.source_updated_at);
+  }
+
   // Register the parquet file
   const parquetUrl = `${BUCKET_URL}/${parquetPath}`;
   await db.registerFileURL("jobs.parquet", parquetUrl, duckdb.DuckDBDataProtocol.HTTP, false);
@@ -33,6 +39,10 @@ export async function initDb(): Promise<void> {
   await conn.query(`CREATE VIEW jobs AS SELECT * FROM 'jobs.parquet'`);
 
   console.log("DuckDB initialized with jobs data");
+}
+
+export function getSourceUpdatedAt(): Date | null {
+  return sourceUpdatedAt;
 }
 
 export interface Job {
@@ -183,6 +193,51 @@ export async function getCategories(): Promise<string[]> {
   return categories;
 }
 
+// Slugify a string for URLs
+export function slugify(str: string): string {
+  return str
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+// Generate cityjobs.nyc.gov URL for a job
+export function getJobUrl(job: Job): string {
+  const titleSlug = slugify(job.business_title);
+  const locationSlug = slugify(job.work_location);
+  return `https://cityjobs.nyc.gov/job/${titleSlug}-in-${locationSlug}-jid-${job.job_id}`;
+}
+
+// Convert DuckDB DATE to ISO date string
+export function duckDbDateToString(value: unknown): string {
+  if (value == null) return "";
+
+  // DuckDB WASM returns dates as milliseconds since epoch
+  if (typeof value === "number" || typeof value === "bigint") {
+    const num = Number(value);
+    // Large numbers (> 1 billion) are milliseconds, small numbers are days
+    const ms = num > 1_000_000_000 ? num : num * 24 * 60 * 60 * 1000;
+    const date = new Date(ms);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString().split("T")[0];
+    }
+  }
+
+  // Handle Date objects directly
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return value.toISOString().split("T")[0];
+  }
+
+  // Fallback: try parsing as string
+  const str = String(value);
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split("T")[0];
+  }
+
+  return str;
+}
+
 // Helper to convert DuckDB row to Job object
 function rowToJob(row: Record<string, unknown>): Job {
   return {
@@ -207,8 +262,8 @@ function rowToJob(row: Record<string, unknown>): Job {
     job_description: String(row.job_description ?? ""),
     minimum_qual_requirements: String(row.minimum_qual_requirements ?? ""),
     residency_requirement: String(row.residency_requirement ?? ""),
-    posted_date: String(row.posted_date ?? ""),
-    posted_until_date: String(row.posted_until_date ?? ""),
-    posting_updated_date: String(row.posting_updated_date ?? ""),
+    posted_date: duckDbDateToString(row.posted_date),
+    posted_until_date: duckDbDateToString(row.posted_until_date),
+    posting_updated_date: duckDbDateToString(row.posting_updated_date),
   };
 }
