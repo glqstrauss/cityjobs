@@ -5,8 +5,10 @@ Triggered by Cloud Scheduler (daily) or HTTP request (manual).
 """
 
 from datetime import datetime, timezone
+import json
 import logging
 import os
+from typing import Any
 
 import functions_framework
 from flask import Request
@@ -19,7 +21,20 @@ from google.cloud import storage
 
 
 logging.getLogger().setLevel(logging.INFO)
-logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
+
+
+def log(message: str, level: str = "info", **fields: Any) -> None:
+    """Log a JSON-structured message for Cloud Logging."""
+    log_fn = getattr(_logger, level)
+    if fields:
+        # Convert datetime objects to ISO strings
+        for k, v in fields.items():
+            if isinstance(v, datetime):
+                fields[k] = v.isoformat()
+        log_fn(json.dumps({"message": message, **fields}))
+    else:
+        log_fn(message)
 
 
 @functions_framework.http
@@ -37,25 +52,28 @@ def main(request: Request) -> tuple[str, int]:
         bucket = storage_client.bucket(os.environ.get("GCS_BUCKET", "cityjobs-data"))
 
         job_state = get_job_state(bucket)
+        log("Starting pipeline", **job_state.to_dict())
         dataset_metadata = get_dataset_metadata()
         dataset_last_updated = datetime.fromisoformat(dataset_metadata["dataUpdatedAt"])
         if (
             job_state.source_updated_at is None
             or job_state.source_updated_at < dataset_last_updated
         ):
-            logger.info("New data available since last run, fetching dataset...")
+            log(
+                "New data available since last run",
+                source_updated_at=job_state.source_updated_at,
+                dataset_last_updated=dataset_last_updated,
+            )
             job_state.source_updated_at = dataset_last_updated
             job_state.snapshot_fetched_at = datetime.now(timezone.utc)
             job_state.snapshot_path = f"raw/{job_state.snapshot_fetched_at}.json"
             fetch_jobs(bucket.blob(job_state.snapshot_path))
             update_job_state(bucket, job_state)
         else:
-            logger.info(
-                "No new data available since last run",
-                extra={
-                    "source_updated_at": job_state.source_updated_at,
-                    "dataset_last_updated": dataset_last_updated,
-                },
+            log(
+                "No new data",
+                source_updated_at=job_state.source_updated_at,
+                dataset_last_updated=dataset_last_updated,
             )
 
         if (
@@ -66,7 +84,7 @@ def main(request: Request) -> tuple[str, int]:
                 or job_state.snapshot_processed_at < job_state.snapshot_fetched_at
             )
         ):
-            logger.info("New snapshot fetched, processing dataset...")
+            log("Processing snapshot", snapshot_path=job_state.snapshot_path)
             job_state.snapshot_processed_at = datetime.now(timezone.utc)
             job_state.processed_path = (
                 f"processed/{job_state.snapshot_processed_at}.parquet"
@@ -78,13 +96,13 @@ def main(request: Request) -> tuple[str, int]:
             )
             update_job_state(bucket, job_state)
         else:
-            logger.info("No new snapshot to process.")
+            log("No processing needed")
 
-        logger.info("Pipeline complete")
+        log("Pipeline complete")
         return "OK", 200
 
     except Exception as e:
-        logger.exception("Pipeline failed")
+        log("Pipeline failed", level="exception", error=str(e))
         return f"Error: {e}", 500
 
 
@@ -92,22 +110,21 @@ def get_job_state(bucket: storage.Bucket) -> JobState:
     """Retrieve the last job state from GCS."""
     metadata_blob = bucket.blob("metadata.json")
     if metadata_blob.exists():
-        metadata_content = metadata_blob.download_as_text()
-        logger.info(f"Last job state: {metadata_content}")
-        return JobState.from_json(metadata_content)
+        return JobState.from_json(metadata_blob.download_as_text())
     else:
-        logger.info("No previous job state found")
-        return JobState()
+        log("No previous job state found.")
+        return JobState.empty()
 
 
 def update_job_state(bucket: storage.Bucket, job_state: JobState) -> None:
     """Update the job state in GCS."""
     metadata_blob = bucket.blob("metadata.json")
+    content = job_state.to_json()
     metadata_blob.upload_from_string(
-        job_state.to_json(),
+        content,
         content_type="application/json",
     )
-    logger.info("Updated job state in GCS")
+    log("Job state updated", content=content)
 
 
 # For local development
