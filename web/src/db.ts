@@ -19,10 +19,10 @@ export async function initDb(): Promise<void> {
   // Fetch metadata to get parquet path
   const metadataRes = await fetch(`${BUCKET_URL}/metadata.json`);
   const metadata = await metadataRes.json();
-  const parquetPath = metadata.processedPath;
+  const parquetPath = metadata.processed_path;
 
   if (!parquetPath) {
-    throw new Error("No processedPath in metadata.json");
+    throw new Error("No processed_path in metadata.json");
   }
 
   // Register the parquet file
