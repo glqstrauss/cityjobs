@@ -193,19 +193,9 @@ export async function getCategories(): Promise<string[]> {
   return categories;
 }
 
-// Slugify a string for URLs
-export function slugify(str: string): string {
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
 // Generate cityjobs.nyc.gov URL for a job
 export function getJobUrl(job: Job): string {
-  const titleSlug = slugify(job.business_title);
-  const locationSlug = slugify(job.work_location);
-  return `https://cityjobs.nyc.gov/job/${titleSlug}-in-${locationSlug}-jid-${job.job_id}`;
+  return `https://cityjobs.nyc.gov/job/jid-${job.job_id}`;
 }
 
 // Convert DuckDB DATE to ISO date string
