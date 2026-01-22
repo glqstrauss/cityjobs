@@ -40,8 +40,8 @@ def main(request: Request) -> tuple[str, int]:
         dataset_metadata = get_dataset_metadata()
         dataset_last_updated = datetime.fromisoformat(dataset_metadata["dataUpdatedAt"])
         if (
-            job_state.source_updated_at
-            and job_state.source_updated_at < dataset_last_updated
+            job_state.source_updated_at is None
+            or job_state.source_updated_at < dataset_last_updated
         ):
             logger.info("New data available since last run, fetching dataset...")
             job_state.source_updated_at = dataset_last_updated
@@ -49,6 +49,14 @@ def main(request: Request) -> tuple[str, int]:
             job_state.snapshot_path = f"raw/{job_state.snapshot_fetched_at}.json"
             fetch_jobs(bucket.blob(job_state.snapshot_path))
             update_job_state(bucket, job_state)
+        else:
+            logger.info(
+                "No new data available since last run",
+                extra={
+                    "source_updated_at": job_state.source_updated_at,
+                    "dataset_last_updated": dataset_last_updated,
+                },
+            )
 
         if (
             job_state.snapshot_fetched_at
@@ -69,6 +77,8 @@ def main(request: Request) -> tuple[str, int]:
                 job_state.processed_path,
             )
             update_job_state(bucket, job_state)
+        else:
+            logger.info("No new snapshot to process.")
 
         logger.info("Pipeline complete")
         return "OK", 200
@@ -94,7 +104,7 @@ def update_job_state(bucket: storage.Bucket, job_state: JobState) -> None:
     """Update the job state in GCS."""
     metadata_blob = bucket.blob("metadata.json")
     metadata_blob.upload_from_string(
-        job_state.to_json(indent=2),
+        job_state.to_json(),
         content_type="application/json",
     )
     logger.info("Updated job state in GCS")

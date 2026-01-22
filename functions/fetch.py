@@ -92,7 +92,7 @@ def fetch_jobs(raw_blob: storage.Blob) -> str | None:
     logger.info(f"Fetched {len(jobs)} total records")
 
     raw_blob.upload_from_string(
-        json.dumps(jobs, indent=2),
+        json.dumps(jobs),
         content_type="application/json",
     )
     logger.info(f"Stored raw snapshot: {raw_blob.name}")
