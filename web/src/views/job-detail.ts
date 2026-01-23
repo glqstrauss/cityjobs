@@ -130,13 +130,11 @@ export async function renderJobDetail(jobId: string): Promise<void> {
       </section>
 
       <footer>
-        <a
-          href="${getJobUrl(job)}"
-          target="_blank"
-          role="button"
-        >
-          Apply on NYC Jobs
-        </a>
+        ${
+          job.posting_type !== "Internal"
+            ? `<a href="${getJobUrl(job)}" target="_blank" role="button">Apply on NYC Jobs</a>`
+            : `<span class="internal-notice">Internal posting - not available for public application</span>`
+        }
         <a href="#/jobs" role="button" class="secondary">Back to Search</a>
       </footer>
     </article>

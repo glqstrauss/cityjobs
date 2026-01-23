@@ -319,13 +319,19 @@ gsutil -m cp -r web/dist/* gs://cityjobs-data/
 ## QA TODOs
 
 ### Quick Wins
-- [ ] Fix "Invalid Date" display - date parsing issue
-- [ ] Fix job link URLs - construct cityjobs.nyc.gov format in DuckDB transform
-- [ ] Table CSS: smaller font, horizontal scroll, better density
-- [ ] Show actual last updated date from metadata.json `source_updated_at`
+
+- [x] Fix "Invalid Date" display - date parsing issue
+- [x] Fix job link URLs - construct cityjobs.nyc.gov format in DuckDB transform
+- [x] Table CSS: smaller font, horizontal scroll, better density
+- [ ] Show actual last updated date from metadata.json `source_updated_at`. This is still not done on the job search page...
+- [ ] Changing a filter should change the search button to "Apply Filters" to indicate re-query is needed
+- [ ] Instead of the whole row being clickable in the job list, only make the job title a link. This avoids accidental clicks when trying to select text.
+- [ ]
 
 ### TanStack Table Integration
+
 Replace current table with TanStack Table (headless) for:
+
 - [ ] Column sorting (wired to DuckDB ORDER BY)
 - [ ] Column visibility toggle (show/hide columns)
 - [ ] Dynamic filtering on all fields (wired to DuckDB WHERE)
@@ -335,6 +341,6 @@ Library: `@tanstack/table-core` (~15kb, vanilla JS)
 Approach: TanStack manages UI state, DuckDB executes queries
 
 ### Job Link Format
-Pattern: `https://cityjobs.nyc.gov/job/{slugified-title}-in-{location}-jid-{job_id}`
-Example: `https://cityjobs.nyc.gov/job/application-developer-for-capital-integrated-data-solutions-in-queens-jid-38231`
-Generate in SQL transform as `job_url` column.
+
+It's not possible to directly generate the URL so instead we generate a search URL consisting of job title and agency
+https://cityjobs.nyc.gov/jobs?q=Senior_Data_Analyst_DEPARTMENT_OF_TRANSPORTATION

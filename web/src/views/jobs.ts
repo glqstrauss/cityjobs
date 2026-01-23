@@ -6,6 +6,7 @@ interface State {
   search: string;
   agency: string;
   category: string;
+  hideInternal: boolean;
   page: number;
 }
 
@@ -13,6 +14,7 @@ const state: State = {
   search: "",
   agency: "",
   category: "",
+  hideInternal: true,
   page: 0,
 };
 
@@ -49,6 +51,10 @@ export async function renderJobs(): Promise<void> {
         </select>
         <button type="submit">Search</button>
       </fieldset>
+      <label class="checkbox-label">
+        <input type="checkbox" name="hideInternal" ${state.hideInternal ? "checked" : ""} />
+        Hide internal postings
+      </label>
     </form>
 
     <div id="results">
@@ -64,6 +70,7 @@ export async function renderJobs(): Promise<void> {
     state.search = formData.get("search") as string;
     state.agency = formData.get("agency") as string;
     state.category = formData.get("category") as string;
+    state.hideInternal = formData.get("hideInternal") === "on";
     state.page = 0;
     await loadResults();
   });
@@ -81,6 +88,7 @@ async function loadResults(): Promise<void> {
       search: state.search || undefined,
       agency: state.agency || undefined,
       category: state.category || undefined,
+      hideInternal: state.hideInternal,
       limit: PAGE_SIZE,
       offset: state.page * PAGE_SIZE,
     });

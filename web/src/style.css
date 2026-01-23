@@ -78,6 +78,18 @@
   min-width: 150px;
 }
 
+.filters .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+}
+
+.filters .checkbox-label input {
+  margin: 0;
+}
+
 /* Pagination */
 .pagination {
   display: flex;
@@ -111,4 +123,14 @@
 
 .content-page h2:first-child {
   margin-top: 0;
+}
+
+/* Internal posting notice */
+.internal-notice {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: var(--pico-muted-border-color);
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--pico-muted-color);
 }

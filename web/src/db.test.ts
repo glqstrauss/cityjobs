@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import { getJobUrl, duckDbDateToString, Job } from "./db";
 
 describe("getJobUrl", () => {
-  it("generates URL with job ID", () => {
-    const job = { job_id: "39833" } as Job;
-    expect(getJobUrl(job)).toBe("https://cityjobs.nyc.gov/job/jid-39833");
+  it("generates search URL with title and agency", () => {
+    const job = { business_title: "Data Analyst", agency: "NYPD" } as Job;
+    expect(getJobUrl(job)).toBe(
+      "https://cityjobs.nyc.gov/jobs?q=Data_Analyst_NYPD"
+    );
   });
 });
 

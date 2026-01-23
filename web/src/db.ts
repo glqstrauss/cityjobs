@@ -87,6 +87,7 @@ export async function queryJobs(options: {
   agency?: string;
   category?: string;
   isFullTime?: boolean;
+  hideInternal?: boolean;
   limit?: number;
   offset?: number;
   orderBy?: string;
@@ -115,6 +116,10 @@ export async function queryJobs(options: {
 
   if (options.isFullTime !== undefined) {
     conditions.push(`is_full_time = ${options.isFullTime}`);
+  }
+
+  if (options.hideInternal) {
+    conditions.push(`posting_type != 'Internal'`);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -193,9 +198,10 @@ export async function getCategories(): Promise<string[]> {
   return categories;
 }
 
-// Generate cityjobs.nyc.gov URL for a job
+// Generate cityjobs.nyc.gov search URL for a job
 export function getJobUrl(job: Job): string {
-  return `https://cityjobs.nyc.gov/job/jid-${job.job_id}`;
+  const query = `${job.business_title} ${job.agency}`.replace(/\s+/g, "_");
+  return `https://cityjobs.nyc.gov/jobs?q=${encodeURIComponent(query)}`;
 }
 
 // Convert DuckDB DATE to ISO date string
