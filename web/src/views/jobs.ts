@@ -12,9 +12,14 @@ const PAGE_SIZE = 25;
 
 interface State {
   search: string;
-  agency: string;
-  category: string;
-  hideInternal: boolean;
+  agencies: string[];
+  categories: string[];
+  careerLevels: string[];
+  fullTimeFilter: string[];
+  examFilter: string[];
+  postingTypes: string[];
+  salaryMin: number | null;
+  salaryMax: number | null;
   page: number;
   sorting: SortingState;
   columnVisibility: VisibilityState;
@@ -22,16 +27,39 @@ interface State {
 
 const state: State = {
   search: "",
-  agency: "",
-  category: "",
-  hideInternal: true,
+  agencies: [],
+  categories: [],
+  careerLevels: [],
+  fullTimeFilter: [],
+  examFilter: [],
+  postingTypes: [],
+  salaryMin: null,
+  salaryMax: null,
   page: 0,
   sorting: [{ id: "posted_date", desc: true }],
   columnVisibility: {
     work_location: false,
     career_level: false,
+    civil_service_title: false,
+    title_classification: false,
+    is_full_time: false,
   },
 };
+
+// Filter options
+const careerLevelOptions = ["Entry-Level", "Experienced (non-manager)", "Manager", "Executive"];
+const fullTimeOptions = [
+  { value: "full_time", label: "Full-time" },
+  { value: "part_time", label: "Part-time" },
+];
+const examOptions = [
+  { value: "requires_exam", label: "Required" },
+  { value: "no_exam", label: "Not required" },
+];
+const postingTypeOptions = [
+  { value: "Internal", label: "Internal" },
+  { value: "External", label: "External" },
+];
 
 // Column definitions
 const columns: ColumnDef<Job, any>[] = [
@@ -71,6 +99,24 @@ const columns: ColumnDef<Job, any>[] = [
     header: "Level",
     enableSorting: true,
   },
+  {
+    id: "civil_service_title",
+    accessorKey: "civil_service_title",
+    header: "Civil Service Title",
+    enableSorting: true,
+  },
+  {
+    id: "title_classification",
+    accessorKey: "title_classification",
+    header: "Classification",
+    enableSorting: true,
+  },
+  {
+    id: "is_full_time",
+    accessorKey: "is_full_time",
+    header: "Full Time",
+    enableSorting: true,
+  },
 ];
 
 // Map column IDs to DuckDB column names
@@ -81,66 +127,156 @@ const columnToDbField: Record<string, string> = {
   posted_date: "posted_date",
   work_location: "work_location",
   career_level: "career_level",
+  civil_service_title: "civil_service_title",
+  title_classification: "title_classification",
+  is_full_time: "is_full_time",
 };
 
 let table: Table<Job> | null = null;
 let currentData: Job[] = [];
 let totalCount = 0;
+let allAgencies: string[] = [];
+let allCategories: string[] = [];
+
+// Track which dropdown is open
+let openDropdown: string | null = null;
 
 function getApp(): HTMLElement {
   return document.getElementById("app")!;
+}
+
+// Render a multi-select dropdown
+function renderMultiSelectDropdown(
+  id: string,
+  label: string,
+  options: { value: string; label: string }[],
+  selected: string[]
+): string {
+  const count = selected.length;
+  const isOpen = openDropdown === id;
+
+  return `
+    <div class="multi-select" data-dropdown="${id}">
+      <button type="button" class="multi-select-btn" data-toggle="${id}">
+        ${escapeHtml(label)}
+        ${count > 0 ? `<span class="count">${count}</span>` : ""}
+        ▼
+      </button>
+      <div class="multi-select-menu ${isOpen ? "" : "hidden"}" data-menu="${id}">
+        <div class="select-all">
+          <button type="button" class="secondary outline" data-select-all="${id}">All</button>
+          <button type="button" class="secondary outline" data-select-none="${id}">None</button>
+        </div>
+        ${options
+          .map(
+            (opt) => `
+          <label>
+            <input type="checkbox" data-filter="${id}" value="${escapeHtml(opt.value)}" ${selected.includes(opt.value) ? "checked" : ""} />
+            ${escapeHtml(opt.label)}
+          </label>
+        `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+// Render column visibility dropdown (special case with different state)
+function renderColumnDropdown(): string {
+  const visibleCount = columns.filter((col) => {
+    const id = (col as any).accessorKey as string;
+    return state.columnVisibility[id] !== false;
+  }).length;
+  const isOpen = openDropdown === "columns";
+
+  return `
+    <div class="multi-select" data-dropdown="columns">
+      <button type="button" class="multi-select-btn" data-toggle="columns">
+        Columns
+        <span class="count">${visibleCount}</span>
+        ▼
+      </button>
+      <div class="multi-select-menu ${isOpen ? "" : "hidden"}" data-menu="columns">
+        <div class="select-all">
+          <button type="button" class="secondary outline" data-select-all="columns">All</button>
+          <button type="button" class="secondary outline" data-select-none="columns">None</button>
+        </div>
+        ${columns
+          .map((col) => {
+            const id = (col as any).accessorKey as string;
+            const header = typeof (col as any).header === "string" ? (col as any).header : id;
+            const checked = state.columnVisibility[id] !== false;
+            return `
+              <label>
+                <input type="checkbox" data-column="${id}" ${checked ? "checked" : ""} />
+                ${header}
+              </label>
+            `;
+          })
+          .join("")}
+      </div>
+    </div>
+  `;
 }
 
 export async function renderJobs(): Promise<void> {
   const app = getApp();
 
   // Fetch filter options
-  const [agencies, categories] = await Promise.all([getAgencies(), getCategories()]);
+  [allAgencies, allCategories] = await Promise.all([getAgencies(), getCategories()]);
 
   // Build page structure
   app.innerHTML = `
     <h1>NYC Government Jobs</h1>
 
-    <form class="filters" id="filters">
-      <fieldset role="group">
-        <input
-          type="search"
-          name="search"
-          placeholder="Search jobs..."
-          class="search-input"
-          value="${escapeHtml(state.search)}"
-        />
-        <select name="agency" class="filter-select">
-          <option value="">All Agencies</option>
-          ${agencies.map((a) => `<option value="${escapeHtml(a)}" ${state.agency === a ? "selected" : ""}>${escapeHtml(a)}</option>`).join("")}
-        </select>
-        <select name="category" class="filter-select">
-          <option value="">All Categories</option>
-          ${categories.map((c) => `<option value="${escapeHtml(c)}" ${state.category === c ? "selected" : ""}>${escapeHtml(c)}</option>`).join("")}
-        </select>
-        <button type="submit" id="search-btn">Search</button>
-      </fieldset>
-      <div class="filter-row">
-        <label class="checkbox-label">
-          <input type="checkbox" name="hideInternal" ${state.hideInternal ? "checked" : ""} />
-          Hide internal postings
-        </label>
-        <button type="button" id="column-toggle-btn" class="secondary outline">Columns</button>
+    <div class="filters" id="filters">
+      <div class="search-row">
+        <fieldset role="group" class="search-group">
+          <input
+            type="search"
+            name="search"
+            id="search-input"
+            placeholder="Search jobs..."
+            value="${escapeHtml(state.search)}"
+          />
+          <button type="button" id="search-btn">Search</button>
+        </fieldset>
       </div>
-    </form>
 
-    <div id="column-menu" class="column-menu hidden">
-      ${columns.map((col) => {
-        const id = (col as any).accessorKey as string;
-        const header = typeof (col as any).header === "string" ? (col as any).header : id;
-        const checked = state.columnVisibility[id] !== false;
-        return `
-          <label>
-            <input type="checkbox" data-column="${id}" ${checked ? "checked" : ""} />
-            ${header}
-          </label>
-        `;
-      }).join("")}
+      <div class="filter-row" id="filter-dropdowns">
+        ${renderMultiSelectDropdown(
+          "agencies",
+          "Agency",
+          allAgencies.map((a) => ({ value: a, label: a })),
+          state.agencies
+        )}
+        ${renderMultiSelectDropdown(
+          "categories",
+          "Category",
+          allCategories.map((c) => ({ value: c, label: c })),
+          state.categories
+        )}
+        ${renderMultiSelectDropdown(
+          "careerLevels",
+          "Career Level",
+          careerLevelOptions.map((l) => ({ value: l, label: l })),
+          state.careerLevels
+        )}
+        ${renderMultiSelectDropdown("fullTime", "Type", fullTimeOptions, state.fullTimeFilter)}
+        ${renderMultiSelectDropdown("exam", "Exam", examOptions, state.examFilter)}
+        ${renderMultiSelectDropdown("postingType", "Posting", postingTypeOptions, state.postingTypes)}
+        ${renderColumnDropdown()}
+      </div>
+
+      <div class="filter-row">
+        <div class="salary-filter">
+          <span>Salary:</span>
+          <input type="number" id="salary-min" placeholder="Min" value="${state.salaryMin ?? ""}" />
+          <span>to</span>
+          <input type="number" id="salary-max" placeholder="Max" value="${state.salaryMax ?? ""}" />
+        </div>
+      </div>
     </div>
 
     <div id="results">
@@ -148,60 +284,286 @@ export async function renderJobs(): Promise<void> {
     </div>
   `;
 
-  // Set up form handler
-  const form = document.getElementById("filters") as HTMLFormElement;
-  const searchBtn = document.getElementById("search-btn") as HTMLButtonElement;
-
-  // Update button text when filters change
-  const markFiltersChanged = () => {
-    searchBtn.textContent = "Apply Filters";
-  };
-  form.querySelectorAll("input, select").forEach((el) => {
-    el.addEventListener("input", markFiltersChanged);
-    el.addEventListener("change", markFiltersChanged);
-  });
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const formData = new FormData(form);
-    state.search = formData.get("search") as string;
-    state.agency = formData.get("agency") as string;
-    state.category = formData.get("category") as string;
-    state.hideInternal = formData.get("hideInternal") === "on";
-    state.page = 0;
-    searchBtn.textContent = "Search";
-    await loadResults();
-  });
-
-  // Column visibility toggle
-  const columnToggleBtn = document.getElementById("column-toggle-btn")!;
-  const columnMenu = document.getElementById("column-menu")!;
-
-  columnToggleBtn.addEventListener("click", () => {
-    columnMenu.classList.toggle("hidden");
-  });
-
-  columnMenu.querySelectorAll("input[data-column]").forEach((input) => {
-    input.addEventListener("change", (e) => {
-      const checkbox = e.target as HTMLInputElement;
-      const columnId = checkbox.dataset.column!;
-      state.columnVisibility[columnId] = checkbox.checked;
-      renderTable();
-    });
-  });
-
-  // Close menu when clicking outside
-  document.addEventListener("click", (e) => {
-    if (!columnMenu.contains(e.target as Node) && e.target !== columnToggleBtn) {
-      columnMenu.classList.add("hidden");
-    }
-  });
-
-  // Initial load
+  setupEventHandlers();
   await loadResults();
 }
 
+function setupEventHandlers(): void {
+  const searchInput = document.getElementById("search-input") as HTMLInputElement;
+  const searchBtn = document.getElementById("search-btn") as HTMLButtonElement;
+  const salaryMinInput = document.getElementById("salary-min") as HTMLInputElement;
+  const salaryMaxInput = document.getElementById("salary-max") as HTMLInputElement;
+
+  // Search button triggers text search
+  searchBtn.addEventListener("click", async () => {
+    state.search = searchInput.value;
+    state.page = 0;
+    await loadResults();
+  });
+
+  // Enter key in search input triggers search
+  searchInput.addEventListener("keypress", async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      state.search = searchInput.value;
+      state.page = 0;
+      await loadResults();
+    }
+  });
+
+  // Salary inputs with debounce
+  let salaryTimeout: number | null = null;
+  const handleSalaryChange = () => {
+    if (salaryTimeout) clearTimeout(salaryTimeout);
+    salaryTimeout = window.setTimeout(async () => {
+      state.salaryMin = salaryMinInput.value ? parseInt(salaryMinInput.value, 10) : null;
+      state.salaryMax = salaryMaxInput.value ? parseInt(salaryMaxInput.value, 10) : null;
+      state.page = 0;
+      await loadResults();
+    }, 500);
+  };
+  salaryMinInput.addEventListener("input", handleSalaryChange);
+  salaryMaxInput.addEventListener("input", handleSalaryChange);
+
+  // Dropdown toggle handlers
+  document.querySelectorAll("[data-toggle]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const dropdownId = (btn as HTMLElement).dataset.toggle!;
+      if (openDropdown === dropdownId) {
+        openDropdown = null;
+      } else {
+        openDropdown = dropdownId;
+      }
+      updateDropdownVisibility();
+    });
+  });
+
+  // Select All / Select None handlers
+  document.querySelectorAll("[data-select-all]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const dropdownId = (btn as HTMLElement).dataset.selectAll!;
+      selectAllInDropdown(dropdownId, true);
+    });
+  });
+
+  document.querySelectorAll("[data-select-none]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const dropdownId = (btn as HTMLElement).dataset.selectNone!;
+      selectAllInDropdown(dropdownId, false);
+    });
+  });
+
+  // Checkbox change handlers for filters
+  document.querySelectorAll("[data-filter]").forEach((checkbox) => {
+    checkbox.addEventListener("change", async () => {
+      const dropdownId = (checkbox as HTMLInputElement).dataset.filter!;
+      updateFilterState(dropdownId);
+      state.page = 0;
+      await loadResults();
+      rerenderDropdowns();
+    });
+  });
+
+  // Column visibility handlers
+  document.querySelectorAll("[data-column]").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      const columnId = (checkbox as HTMLInputElement).dataset.column!;
+      state.columnVisibility[columnId] = (checkbox as HTMLInputElement).checked;
+      updateTableVisibility();
+      rerenderDropdowns();
+    });
+  });
+
+  // Close dropdowns when clicking outside
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement;
+    if (!target.closest(".multi-select")) {
+      openDropdown = null;
+      updateDropdownVisibility();
+    }
+  });
+}
+
+function updateDropdownVisibility(): void {
+  document.querySelectorAll("[data-menu]").forEach((menu) => {
+    const menuId = (menu as HTMLElement).dataset.menu!;
+    if (openDropdown === menuId) {
+      menu.classList.remove("hidden");
+    } else {
+      menu.classList.add("hidden");
+    }
+  });
+}
+
+// Update table's column visibility state and re-render
+function updateTableVisibility(): void {
+  if (!currentData.length) return;
+
+  // Recreate table with updated visibility state
+  table = createTable({
+    data: currentData,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    state: {
+      sorting: state.sorting,
+      columnVisibility: state.columnVisibility,
+      columnPinning: { left: [], right: [] },
+    },
+    onStateChange: () => {},
+    onSortingChange: (updater) => {
+      state.sorting = typeof updater === "function" ? updater(state.sorting) : updater;
+      state.page = 0;
+      loadResults();
+    },
+    onColumnVisibilityChange: (updater) => {
+      state.columnVisibility = typeof updater === "function" ? updater(state.columnVisibility) : updater;
+      updateTableVisibility();
+    },
+    manualSorting: true,
+    enableSortingRemoval: false,
+    renderFallbackValue: null,
+  });
+
+  renderTable();
+}
+
+function selectAllInDropdown(dropdownId: string, selectAll: boolean): void {
+  if (dropdownId === "columns") {
+    columns.forEach((col) => {
+      const id = (col as any).accessorKey as string;
+      state.columnVisibility[id] = selectAll;
+    });
+    updateTableVisibility();
+    rerenderDropdowns();
+  } else {
+    const checkboxes = document.querySelectorAll(`[data-filter="${dropdownId}"]`);
+    checkboxes.forEach((cb) => {
+      (cb as HTMLInputElement).checked = selectAll;
+    });
+    updateFilterState(dropdownId);
+    state.page = 0;
+    loadResults().then(() => rerenderDropdowns());
+  }
+}
+
+function updateFilterState(dropdownId: string): void {
+  const checkboxes = document.querySelectorAll(`[data-filter="${dropdownId}"]:checked`);
+  const values = Array.from(checkboxes).map((cb) => (cb as HTMLInputElement).value);
+
+  switch (dropdownId) {
+    case "agencies":
+      state.agencies = values;
+      break;
+    case "categories":
+      state.categories = values;
+      break;
+    case "careerLevels":
+      state.careerLevels = values;
+      break;
+    case "fullTime":
+      state.fullTimeFilter = values;
+      break;
+    case "exam":
+      state.examFilter = values;
+      break;
+    case "postingType":
+      state.postingTypes = values;
+      break;
+  }
+}
+
+function rerenderDropdowns(): void {
+  const dropdownsContainer = document.getElementById("filter-dropdowns");
+  if (!dropdownsContainer) return;
+
+  dropdownsContainer.innerHTML = `
+    ${renderMultiSelectDropdown(
+      "agencies",
+      "Agency",
+      allAgencies.map((a) => ({ value: a, label: a })),
+      state.agencies
+    )}
+    ${renderMultiSelectDropdown(
+      "categories",
+      "Category",
+      allCategories.map((c) => ({ value: c, label: c })),
+      state.categories
+    )}
+    ${renderMultiSelectDropdown(
+      "careerLevels",
+      "Career Level",
+      careerLevelOptions.map((l) => ({ value: l, label: l })),
+      state.careerLevels
+    )}
+    ${renderMultiSelectDropdown("fullTime", "Type", fullTimeOptions, state.fullTimeFilter)}
+    ${renderMultiSelectDropdown("exam", "Exam", examOptions, state.examFilter)}
+    ${renderMultiSelectDropdown("postingType", "Posting", postingTypeOptions, state.postingTypes)}
+    ${renderColumnDropdown()}
+  `;
+
+  // Re-attach event handlers for the new dropdown elements
+  setupDropdownHandlers();
+}
+
+function setupDropdownHandlers(): void {
+  // Dropdown toggle handlers
+  document.querySelectorAll("[data-toggle]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const dropdownId = (btn as HTMLElement).dataset.toggle!;
+      if (openDropdown === dropdownId) {
+        openDropdown = null;
+      } else {
+        openDropdown = dropdownId;
+      }
+      updateDropdownVisibility();
+    });
+  });
+
+  // Select All / Select None handlers
+  document.querySelectorAll("[data-select-all]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const dropdownId = (btn as HTMLElement).dataset.selectAll!;
+      selectAllInDropdown(dropdownId, true);
+    });
+  });
+
+  document.querySelectorAll("[data-select-none]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const dropdownId = (btn as HTMLElement).dataset.selectNone!;
+      selectAllInDropdown(dropdownId, false);
+    });
+  });
+
+  // Checkbox change handlers for filters
+  document.querySelectorAll("[data-filter]").forEach((checkbox) => {
+    checkbox.addEventListener("change", async () => {
+      const dropdownId = (checkbox as HTMLInputElement).dataset.filter!;
+      updateFilterState(dropdownId);
+      state.page = 0;
+      await loadResults();
+      rerenderDropdowns();
+    });
+  });
+
+  // Column visibility handlers
+  document.querySelectorAll("[data-column]").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      const columnId = (checkbox as HTMLInputElement).dataset.column!;
+      state.columnVisibility[columnId] = (checkbox as HTMLInputElement).checked;
+      updateTableVisibility();
+      rerenderDropdowns();
+    });
+  });
+}
+
 async function loadResults(): Promise<void> {
+  const scrollY = window.scrollY; // Save scroll position
   const resultsDiv = document.getElementById("results")!;
   resultsDiv.innerHTML = '<p aria-busy="true">Loading jobs...</p>';
 
@@ -213,9 +575,14 @@ async function loadResults(): Promise<void> {
 
     const result = await queryJobs({
       search: state.search || undefined,
-      agency: state.agency || undefined,
-      category: state.category || undefined,
-      hideInternal: state.hideInternal,
+      agencies: state.agencies.length > 0 ? state.agencies : undefined,
+      categories: state.categories.length > 0 ? state.categories : undefined,
+      careerLevels: state.careerLevels.length > 0 ? state.careerLevels : undefined,
+      fullTimeFilter: state.fullTimeFilter.length > 0 ? state.fullTimeFilter : undefined,
+      examFilter: state.examFilter.length > 0 ? state.examFilter : undefined,
+      postingTypes: state.postingTypes.length > 0 ? state.postingTypes : undefined,
+      salaryMin: state.salaryMin ?? undefined,
+      salaryMax: state.salaryMax ?? undefined,
       limit: PAGE_SIZE,
       offset: state.page * PAGE_SIZE,
       orderBy,
@@ -251,6 +618,7 @@ async function loadResults(): Promise<void> {
     });
 
     renderTable();
+    window.scrollTo(0, scrollY); // Restore scroll position
   } catch (error) {
     console.error("Error loading jobs:", error);
     resultsDiv.innerHTML = `<p>Error loading jobs. Please try again.</p>`;
@@ -275,58 +643,81 @@ function renderTable(): void {
       <div class="table-container">
         <table class="job-table">
           <thead>
-            ${headerGroups.map((headerGroup) => `
+            ${headerGroups
+              .map(
+                (headerGroup) => `
               <tr>
-                ${headerGroup.headers.map((header) => {
-                  const canSort = header.column.getCanSort();
-                  const sorted = header.column.getIsSorted();
-                  const sortIcon = sorted === "asc" ? " ↑" : sorted === "desc" ? " ↓" : "";
-                  return `
+                ${headerGroup.headers
+                  .map((header) => {
+                    const canSort = header.column.getCanSort();
+                    const sorted = header.column.getIsSorted();
+                    const sortIcon = sorted === "asc" ? " ↑" : sorted === "desc" ? " ↓" : "";
+                    return `
                     <th ${canSort ? `class="sortable" data-column-id="${header.id}"` : ""}>
                       ${header.isPlaceholder ? "" : header.column.columnDef.header}${sortIcon}
                     </th>
                   `;
-                }).join("")}
+                  })
+                  .join("")}
               </tr>
-            `).join("")}
+            `
+              )
+              .join("")}
           </thead>
           <tbody>
-            ${rows.map((row) => `
+            ${rows
+              .map(
+                (row) => `
               <tr>
-                ${row.getVisibleCells().map((cell) => {
-                  const job = row.original;
-                  const colId = cell.column.id;
-                  let value: string;
+                ${row
+                  .getVisibleCells()
+                  .map((cell) => {
+                    const job = row.original;
+                    const colId = cell.column.id;
+                    let value: string;
 
-                  switch (colId) {
-                    case "business_title":
-                      const categories = job.job_categories.length > 0
-                        ? `<br><small>${job.job_categories.map((c) => escapeHtml(c)).join(", ")}</small>`
-                        : "";
-                      value = `<a href="#/jobs/${escapeHtml(job.job_id)}" class="job-link">${escapeHtml(job.business_title)}</a>${categories}`;
-                      break;
-                    case "agency":
-                      value = escapeHtml(job.agency);
-                      break;
-                    case "salary_range_from":
-                      value = formatSalary(job);
-                      break;
-                    case "posted_date":
-                      value = formatDate(job.posted_date);
-                      break;
-                    case "work_location":
-                      value = escapeHtml(job.work_location || "—");
-                      break;
-                    case "career_level":
-                      value = escapeHtml(job.career_level || "—");
-                      break;
-                    default:
-                      value = String(cell.getValue() ?? "");
-                  }
-                  return `<td>${value}</td>`;
-                }).join("")}
+                    switch (colId) {
+                      case "business_title":
+                        const categories =
+                          job.job_categories.length > 0
+                            ? `<br><small>${job.job_categories.map((c) => escapeHtml(c)).join(", ")}</small>`
+                            : "";
+                        value = `<a href="#/jobs/${escapeHtml(job.job_id)}" class="job-link">${escapeHtml(job.business_title)}</a>${categories}`;
+                        break;
+                      case "agency":
+                        value = escapeHtml(job.agency);
+                        break;
+                      case "salary_range_from":
+                        value = formatSalary(job);
+                        break;
+                      case "posted_date":
+                        value = formatDate(job.posted_date);
+                        break;
+                      case "work_location":
+                        value = escapeHtml(job.work_location || "—");
+                        break;
+                      case "career_level":
+                        value = escapeHtml(job.career_level || "—");
+                        break;
+                      case "civil_service_title":
+                        value = escapeHtml(job.civil_service_title || "—");
+                        break;
+                      case "title_classification":
+                        value = escapeHtml(job.title_classification || "—");
+                        break;
+                      case "is_full_time":
+                        value = job.is_full_time ? "Yes" : "No";
+                        break;
+                      default:
+                        value = String(cell.getValue() ?? "");
+                    }
+                    return `<td>${value}</td>`;
+                  })
+                  .join("")}
               </tr>
-            `).join("")}
+            `
+              )
+              .join("")}
           </tbody>
         </table>
       </div>

@@ -84,10 +84,14 @@ function escapeSql(str: string): string {
 
 export async function queryJobs(options: {
   search?: string;
-  agency?: string;
-  category?: string;
-  isFullTime?: boolean;
-  hideInternal?: boolean;
+  agencies?: string[];
+  categories?: string[];
+  careerLevels?: string[];
+  fullTimeFilter?: string[];
+  examFilter?: string[];
+  postingTypes?: string[];
+  salaryMin?: number;
+  salaryMax?: number;
   limit?: number;
   offset?: number;
   orderBy?: string;
@@ -106,20 +110,63 @@ export async function queryJobs(options: {
     )`);
   }
 
-  if (options.agency) {
-    conditions.push(`agency = '${escapeSql(options.agency)}'`);
+  if (options.agencies && options.agencies.length > 0) {
+    const agencyList = options.agencies.map((a) => `'${escapeSql(a)}'`).join(", ");
+    conditions.push(`agency IN (${agencyList})`);
   }
 
-  if (options.category) {
-    conditions.push(`list_contains(job_categories, '${escapeSql(options.category)}')`);
+  if (options.categories && options.categories.length > 0) {
+    // Job matches if any of its categories are in the selected list
+    const categoryConditions = options.categories.map(
+      (c) => `list_contains(job_categories, '${escapeSql(c)}')`
+    );
+    conditions.push(`(${categoryConditions.join(" OR ")})`);
   }
 
-  if (options.isFullTime !== undefined) {
-    conditions.push(`is_full_time = ${options.isFullTime}`);
+  if (options.careerLevels && options.careerLevels.length > 0) {
+    const levels = options.careerLevels.map((l) => `'${escapeSql(l)}'`).join(", ");
+    conditions.push(`career_level IN (${levels})`);
   }
 
-  if (options.hideInternal) {
-    conditions.push(`posting_type != 'Internal'`);
+  if (options.fullTimeFilter && options.fullTimeFilter.length > 0) {
+    const ftConditions: string[] = [];
+    if (options.fullTimeFilter.includes("full_time")) {
+      ftConditions.push("is_full_time = true");
+    }
+    if (options.fullTimeFilter.includes("part_time")) {
+      ftConditions.push("is_full_time = false");
+    }
+    if (ftConditions.length > 0 && ftConditions.length < 2) {
+      conditions.push(`(${ftConditions.join(" OR ")})`);
+    }
+  }
+
+  if (options.examFilter && options.examFilter.length > 0) {
+    const examConditions: string[] = [];
+    if (options.examFilter.includes("requires_exam")) {
+      examConditions.push("requires_exam = true");
+    }
+    if (options.examFilter.includes("no_exam")) {
+      examConditions.push("requires_exam = false");
+    }
+    if (examConditions.length > 0 && examConditions.length < 2) {
+      conditions.push(`(${examConditions.join(" OR ")})`);
+    }
+  }
+
+  if (options.postingTypes && options.postingTypes.length > 0 && options.postingTypes.length < 2) {
+    // Only filter if one type is selected (not both)
+    const types = options.postingTypes.map((t) => `'${escapeSql(t)}'`).join(", ");
+    conditions.push(`posting_type IN (${types})`);
+  }
+
+  // Salary range filter: job matches if ranges overlap
+  // User's range [salaryMin, salaryMax] intersects with job's range [salary_range_from, salary_range_to]
+  if (options.salaryMin != null) {
+    conditions.push(`salary_range_to >= ${options.salaryMin}`);
+  }
+  if (options.salaryMax != null) {
+    conditions.push(`salary_range_from <= ${options.salaryMax}`);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

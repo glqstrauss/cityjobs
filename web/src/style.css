@@ -69,70 +69,131 @@
   margin-bottom: 1.5rem;
 }
 
-.filters fieldset {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  align-items: end;
+.filters .search-row {
+  margin-bottom: 1rem;
 }
 
-.filters .search-input {
-  flex: 2;
-  min-width: 200px;
+.filters .search-group {
+  width: 70%;
+  min-width: 300px;
+  margin-bottom: 0;
 }
 
-.filters .filter-select {
+.filters .search-group input {
   flex: 1;
-  min-width: 150px;
+}
+
+.filters .search-group button {
+  flex: 0 0 auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
 
 .filters .filter-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
 }
 
-.filters .checkbox-label {
+.filters .salary-filter {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.875rem;
 }
 
-.filters .checkbox-label input {
-  margin: 0;
-}
-
-/* Column visibility menu */
-.column-menu {
-  position: absolute;
-  background: var(--pico-background-color);
-  border: 1px solid var(--pico-muted-border-color);
-  border-radius: 0.25rem;
+.filters .salary-filter input {
+  width: 100px;
   padding: 0.5rem;
-  z-index: 100;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-size: 0.875rem;
+  margin-bottom: 0;
 }
 
-.column-menu.hidden {
-  display: none;
+.filters .salary-filter span {
+  color: var(--pico-muted-color);
 }
 
-.column-menu label {
+/* Multi-select dropdown component */
+.multi-select {
+  position: relative;
+  display: inline-block;
+}
+
+.multi-select-btn {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  background: var(--pico-background-color);
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 0.25rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.multi-select-btn:hover {
+  background: var(--pico-secondary-hover-background);
+}
+
+.multi-select-btn .count {
+  background: var(--pico-primary-background);
+  color: var(--pico-primary-inverse);
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  min-width: 1.25rem;
+  text-align: center;
+}
+
+.multi-select-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 200px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--pico-background-color);
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 0.25rem;
+  padding: 0.25rem 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  margin-top: 0.25rem;
+}
+
+.multi-select-menu.hidden {
+  display: none;
+}
+
+.multi-select-menu .select-all {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--pico-muted-border-color);
+  margin-bottom: 0.25rem;
+}
+
+.multi-select-menu .select-all button {
+  font-size: 0.75rem;
   padding: 0.25rem 0.5rem;
+  margin-right: 0.5rem;
+}
+
+.multi-select-menu label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
   font-size: 0.875rem;
   cursor: pointer;
 }
 
-.column-menu label:hover {
+.multi-select-menu label:hover {
   background: var(--pico-secondary-hover-background);
 }
 
-.column-menu input {
+.multi-select-menu input {
   margin: 0;
 }
 

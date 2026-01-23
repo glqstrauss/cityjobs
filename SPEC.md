@@ -326,6 +326,18 @@ gsutil -m cp -r web/dist/* gs://cityjobs-data/
 - [x] Show actual last updated date from metadata.json `source_updated_at`
 - [x] Changing a filter changes search button to "Apply Filters" to indicate re-query is needed
 - [x] Only job title is clickable in the job list (not the whole row)
+- [x] Add additional optional columns to table columns selector:
+  - Civil Service Title
+  - Title Classification
+  - Is Full Time
+- [x] Search behavior
+  - [x] Search button should only be needed for text search input. Move search button next to text input.
+  - [x] Changing selected columns should re-render table immediately (no search button)
+  - [x] Changing filter values should re-render table immediately (no search button)
+- [x] Add filters for:
+  - [x] Career level (multi-select: allow any combination)
+  - [x] Full time/part time (multi-select: full time, part time, both)
+  - [x] Requires exam (multi-select: requires exam, does not require exam, both)
 
 ### TanStack Table Integration
 
