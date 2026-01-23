@@ -6,6 +6,13 @@
   padding: 2rem;
 }
 
+/* Last updated notice */
+.last-updated {
+  font-size: 0.875rem;
+  color: var(--pico-muted-color);
+  margin-bottom: 1rem;
+}
+
 /* Job listing table */
 .table-container {
   overflow-x: auto;
@@ -28,12 +35,13 @@
   min-width: 250px;
 }
 
-.job-table tbody tr {
-  cursor: pointer;
+.job-table .job-link {
+  text-decoration: none;
+  font-weight: 600;
 }
 
-.job-table tbody tr:hover {
-  background: var(--pico-secondary-hover-background);
+.job-table .job-link:hover {
+  text-decoration: underline;
 }
 
 /* Salary display */

@@ -49,7 +49,7 @@ export async function renderJobs(): Promise<void> {
           <option value="">All Categories</option>
           ${categories.map((c) => `<option value="${escapeHtml(c)}" ${state.category === c ? "selected" : ""}>${escapeHtml(c)}</option>`).join("")}
         </select>
-        <button type="submit">Search</button>
+        <button type="submit" id="search-btn">Search</button>
       </fieldset>
       <label class="checkbox-label">
         <input type="checkbox" name="hideInternal" ${state.hideInternal ? "checked" : ""} />
@@ -64,6 +64,17 @@ export async function renderJobs(): Promise<void> {
 
   // Set up form handler
   const form = document.getElementById("filters") as HTMLFormElement;
+  const searchBtn = document.getElementById("search-btn") as HTMLButtonElement;
+
+  // Update button text when filters change
+  const markFiltersChanged = () => {
+    searchBtn.textContent = "Apply Filters";
+  };
+  form.querySelectorAll("input, select").forEach((el) => {
+    el.addEventListener("input", markFiltersChanged);
+    el.addEventListener("change", markFiltersChanged);
+  });
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const formData = new FormData(form);
@@ -72,6 +83,7 @@ export async function renderJobs(): Promise<void> {
     state.category = formData.get("category") as string;
     state.hideInternal = formData.get("hideInternal") === "on";
     state.page = 0;
+    searchBtn.textContent = "Search";
     await loadResults();
   });
 
@@ -142,15 +154,6 @@ async function loadResults(): Promise<void> {
       }
     });
 
-    // Set up row click handlers
-    document.querySelectorAll(".job-row").forEach((row) => {
-      row.addEventListener("click", () => {
-        const jobId = (row as HTMLElement).dataset.jobId;
-        if (jobId) {
-          window.location.hash = `#/jobs/${jobId}`;
-        }
-      });
-    });
   } catch (error) {
     console.error("Error loading jobs:", error);
     resultsDiv.innerHTML = `<p>Error loading jobs. Please try again.</p>`;
@@ -162,9 +165,9 @@ function renderJobRow(job: Job): string {
   const posted = formatDate(job.posted_date);
 
   return `
-    <tr class="job-row" data-job-id="${escapeHtml(job.job_id)}">
+    <tr>
       <td>
-        <strong>${escapeHtml(job.business_title)}</strong>
+        <a href="#/jobs/${escapeHtml(job.job_id)}" class="job-link">${escapeHtml(job.business_title)}</a>
         ${job.job_categories.length > 0 ? `<br><small>${job.job_categories.map((c) => escapeHtml(c)).join(", ")}</small>` : ""}
       </td>
       <td>${escapeHtml(job.agency)}</td>

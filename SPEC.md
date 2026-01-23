@@ -323,10 +323,9 @@ gsutil -m cp -r web/dist/* gs://cityjobs-data/
 - [x] Fix "Invalid Date" display - date parsing issue
 - [x] Fix job link URLs - construct cityjobs.nyc.gov format in DuckDB transform
 - [x] Table CSS: smaller font, horizontal scroll, better density
-- [ ] Show actual last updated date from metadata.json `source_updated_at`. This is still not done on the job search page...
-- [ ] Changing a filter should change the search button to "Apply Filters" to indicate re-query is needed
-- [ ] Instead of the whole row being clickable in the job list, only make the job title a link. This avoids accidental clicks when trying to select text.
-- [ ]
+- [x] Show actual last updated date from metadata.json `source_updated_at`
+- [x] Changing a filter changes search button to "Apply Filters" to indicate re-query is needed
+- [x] Only job title is clickable in the job list (not the whole row)
 
 ### TanStack Table Integration
 
