@@ -360,3 +360,9 @@ https://cityjobs.nyc.gov/jobs?q=Senior_Data_Analyst_DEPARTMENT_OF_TRANSPORTATION
 
 - [ ] Wrap website deployment in `npm deploy` script
 - [ ] Wrap Cloud Function deployment in `deploy.sh` script
+
+### Future Enhancements
+
+- [ ] Filter by recency of job posting (mechanism TBD)
+- [ ] Use DuckDB full text search extension for better search: https://duckdb.org/docs/stable/core_extensions/full_text_search
+- [ ] Add a logo
