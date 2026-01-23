@@ -4,6 +4,7 @@ import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
 
 export default defineConfig({
+  base: "https://storage.googleapis.com/cityjobs-data/",
   plugins: [wasm(), topLevelAwait()],
   worker: {
     plugins: () => [wasm(), topLevelAwait()],

@@ -344,3 +344,8 @@ Approach: TanStack manages UI state, DuckDB executes queries
 
 It's not possible to directly generate the URL so instead we generate a search URL consisting of job title and agency
 https://cityjobs.nyc.gov/jobs?q=Senior_Data_Analyst_DEPARTMENT_OF_TRANSPORTATION
+
+### Dev Ergonomics
+
+- [ ] Wrap website deployment in `npm deploy` script
+- [ ] Wrap Cloud Function deployment in `deploy.sh` script
