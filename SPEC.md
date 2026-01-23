@@ -331,10 +331,10 @@ gsutil -m cp -r web/dist/* gs://cityjobs-data/
 
 Replace current table with TanStack Table (headless) for:
 
-- [ ] Column sorting (wired to DuckDB ORDER BY)
-- [ ] Column visibility toggle (show/hide columns)
-- [ ] Dynamic filtering on all fields (wired to DuckDB WHERE)
-- [ ] Better pagination controls
+- [x] Column sorting (wired to DuckDB ORDER BY)
+- [x] Column visibility toggle (show/hide columns)
+- [x] Better pagination controls (First/Last buttons added)
+- [ ] Dynamic filtering on all fields (wired to DuckDB WHERE) - future enhancement
 
 Library: `@tanstack/table-core` (~15kb, vanilla JS)
 Approach: TanStack manages UI state, DuckDB executes queries

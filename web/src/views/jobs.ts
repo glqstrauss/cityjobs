@@ -1,3 +1,11 @@
+import {
+  createTable,
+  getCoreRowModel,
+  type Table,
+  type ColumnDef,
+  type SortingState,
+  type VisibilityState,
+} from "@tanstack/table-core";
 import { queryJobs, getAgencies, getCategories, Job } from "../db";
 
 const PAGE_SIZE = 25;
@@ -8,6 +16,8 @@ interface State {
   category: string;
   hideInternal: boolean;
   page: number;
+  sorting: SortingState;
+  columnVisibility: VisibilityState;
 }
 
 const state: State = {
@@ -16,7 +26,66 @@ const state: State = {
   category: "",
   hideInternal: true,
   page: 0,
+  sorting: [{ id: "posted_date", desc: true }],
+  columnVisibility: {
+    work_location: false,
+    career_level: false,
+  },
 };
+
+// Column definitions
+const columns: ColumnDef<Job, any>[] = [
+  {
+    id: "business_title",
+    accessorKey: "business_title",
+    header: "Title",
+    enableSorting: true,
+  },
+  {
+    id: "agency",
+    accessorKey: "agency",
+    header: "Agency",
+    enableSorting: true,
+  },
+  {
+    id: "salary_range_from",
+    accessorKey: "salary_range_from",
+    header: "Salary",
+    enableSorting: true,
+  },
+  {
+    id: "posted_date",
+    accessorKey: "posted_date",
+    header: "Posted",
+    enableSorting: true,
+  },
+  {
+    id: "work_location",
+    accessorKey: "work_location",
+    header: "Location",
+    enableSorting: true,
+  },
+  {
+    id: "career_level",
+    accessorKey: "career_level",
+    header: "Level",
+    enableSorting: true,
+  },
+];
+
+// Map column IDs to DuckDB column names
+const columnToDbField: Record<string, string> = {
+  business_title: "business_title",
+  agency: "agency",
+  salary_range_from: "salary_range_from",
+  posted_date: "posted_date",
+  work_location: "work_location",
+  career_level: "career_level",
+};
+
+let table: Table<Job> | null = null;
+let currentData: Job[] = [];
+let totalCount = 0;
 
 function getApp(): HTMLElement {
   return document.getElementById("app")!;
@@ -51,11 +120,28 @@ export async function renderJobs(): Promise<void> {
         </select>
         <button type="submit" id="search-btn">Search</button>
       </fieldset>
-      <label class="checkbox-label">
-        <input type="checkbox" name="hideInternal" ${state.hideInternal ? "checked" : ""} />
-        Hide internal postings
-      </label>
+      <div class="filter-row">
+        <label class="checkbox-label">
+          <input type="checkbox" name="hideInternal" ${state.hideInternal ? "checked" : ""} />
+          Hide internal postings
+        </label>
+        <button type="button" id="column-toggle-btn" class="secondary outline">Columns</button>
+      </div>
     </form>
+
+    <div id="column-menu" class="column-menu hidden">
+      ${columns.map((col) => {
+        const id = (col as any).accessorKey as string;
+        const header = typeof (col as any).header === "string" ? (col as any).header : id;
+        const checked = state.columnVisibility[id] !== false;
+        return `
+          <label>
+            <input type="checkbox" data-column="${id}" ${checked ? "checked" : ""} />
+            ${header}
+          </label>
+        `;
+      }).join("")}
+    </div>
 
     <div id="results">
       <p aria-busy="true">Loading jobs...</p>
@@ -87,6 +173,30 @@ export async function renderJobs(): Promise<void> {
     await loadResults();
   });
 
+  // Column visibility toggle
+  const columnToggleBtn = document.getElementById("column-toggle-btn")!;
+  const columnMenu = document.getElementById("column-menu")!;
+
+  columnToggleBtn.addEventListener("click", () => {
+    columnMenu.classList.toggle("hidden");
+  });
+
+  columnMenu.querySelectorAll("input[data-column]").forEach((input) => {
+    input.addEventListener("change", (e) => {
+      const checkbox = e.target as HTMLInputElement;
+      const columnId = checkbox.dataset.column!;
+      state.columnVisibility[columnId] = checkbox.checked;
+      renderTable();
+    });
+  });
+
+  // Close menu when clicking outside
+  document.addEventListener("click", (e) => {
+    if (!columnMenu.contains(e.target as Node) && e.target !== columnToggleBtn) {
+      columnMenu.classList.add("hidden");
+    }
+  });
+
   // Initial load
   await loadResults();
 }
@@ -96,85 +206,178 @@ async function loadResults(): Promise<void> {
   resultsDiv.innerHTML = '<p aria-busy="true">Loading jobs...</p>';
 
   try {
-    const { rows, totalCount } = await queryJobs({
+    // Get sort info for DuckDB
+    const sortCol = state.sorting[0];
+    const orderBy = sortCol ? columnToDbField[sortCol.id] || "posted_date" : "posted_date";
+    const orderDir = sortCol?.desc ? "DESC" : "ASC";
+
+    const result = await queryJobs({
       search: state.search || undefined,
       agency: state.agency || undefined,
       category: state.category || undefined,
       hideInternal: state.hideInternal,
       limit: PAGE_SIZE,
       offset: state.page * PAGE_SIZE,
+      orderBy,
+      orderDir,
     });
 
-    const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+    currentData = result.rows;
+    totalCount = result.totalCount;
 
-    resultsDiv.innerHTML = `
-      <p><strong>${totalCount}</strong> jobs found</p>
-
-      ${
-        rows.length > 0
-          ? `
-        <div class="table-container">
-          <table class="job-table">
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Agency</th>
-                <th>Salary</th>
-                <th>Posted</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows.map((job) => renderJobRow(job)).join("")}
-            </tbody>
-          </table>
-        </div>
-
-        <div class="pagination">
-          <button id="prev-page" ${state.page === 0 ? "disabled" : ""}>Previous</button>
-          <span>Page ${state.page + 1} of ${totalPages}</span>
-          <button id="next-page" ${state.page >= totalPages - 1 ? "disabled" : ""}>Next</button>
-        </div>
-      `
-          : `<p>No jobs match your criteria.</p>`
-      }
-    `;
-
-    // Set up pagination handlers
-    document.getElementById("prev-page")?.addEventListener("click", async () => {
-      if (state.page > 0) {
-        state.page--;
-        await loadResults();
-      }
+    // Create/update table
+    table = createTable({
+      data: currentData,
+      columns,
+      getCoreRowModel: getCoreRowModel(),
+      state: {
+        sorting: state.sorting,
+        columnVisibility: state.columnVisibility,
+        columnPinning: { left: [], right: [] },
+      },
+      onStateChange: () => {},
+      onSortingChange: (updater) => {
+        state.sorting = typeof updater === "function" ? updater(state.sorting) : updater;
+        state.page = 0;
+        loadResults();
+      },
+      onColumnVisibilityChange: (updater) => {
+        state.columnVisibility = typeof updater === "function" ? updater(state.columnVisibility) : updater;
+        renderTable();
+      },
+      manualSorting: true,
+      enableSortingRemoval: false,
+      renderFallbackValue: null,
     });
 
-    document.getElementById("next-page")?.addEventListener("click", async () => {
-      if (state.page < totalPages - 1) {
-        state.page++;
-        await loadResults();
-      }
-    });
-
+    renderTable();
   } catch (error) {
     console.error("Error loading jobs:", error);
     resultsDiv.innerHTML = `<p>Error loading jobs. Please try again.</p>`;
   }
 }
 
-function renderJobRow(job: Job): string {
-  const salary = formatSalary(job);
-  const posted = formatDate(job.posted_date);
+function renderTable(): void {
+  if (!table) return;
 
-  return `
-    <tr>
-      <td>
-        <a href="#/jobs/${escapeHtml(job.job_id)}" class="job-link">${escapeHtml(job.business_title)}</a>
-        ${job.job_categories.length > 0 ? `<br><small>${job.job_categories.map((c) => escapeHtml(c)).join(", ")}</small>` : ""}
-      </td>
-      <td>${escapeHtml(job.agency)}</td>
-      <td class="salary">${salary}</td>
-      <td>${posted}</td>
-    </tr>
+  const resultsDiv = document.getElementById("results")!;
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+
+  const headerGroups = table.getHeaderGroups();
+  const rows = table.getRowModel().rows;
+
+  resultsDiv.innerHTML = `
+    <p><strong>${totalCount}</strong> jobs found</p>
+
+    ${
+      rows.length > 0
+        ? `
+      <div class="table-container">
+        <table class="job-table">
+          <thead>
+            ${headerGroups.map((headerGroup) => `
+              <tr>
+                ${headerGroup.headers.map((header) => {
+                  const canSort = header.column.getCanSort();
+                  const sorted = header.column.getIsSorted();
+                  const sortIcon = sorted === "asc" ? " ↑" : sorted === "desc" ? " ↓" : "";
+                  return `
+                    <th ${canSort ? `class="sortable" data-column-id="${header.id}"` : ""}>
+                      ${header.isPlaceholder ? "" : header.column.columnDef.header}${sortIcon}
+                    </th>
+                  `;
+                }).join("")}
+              </tr>
+            `).join("")}
+          </thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                ${row.getVisibleCells().map((cell) => {
+                  const job = row.original;
+                  const colId = cell.column.id;
+                  let value: string;
+
+                  switch (colId) {
+                    case "business_title":
+                      const categories = job.job_categories.length > 0
+                        ? `<br><small>${job.job_categories.map((c) => escapeHtml(c)).join(", ")}</small>`
+                        : "";
+                      value = `<a href="#/jobs/${escapeHtml(job.job_id)}" class="job-link">${escapeHtml(job.business_title)}</a>${categories}`;
+                      break;
+                    case "agency":
+                      value = escapeHtml(job.agency);
+                      break;
+                    case "salary_range_from":
+                      value = formatSalary(job);
+                      break;
+                    case "posted_date":
+                      value = formatDate(job.posted_date);
+                      break;
+                    case "work_location":
+                      value = escapeHtml(job.work_location || "—");
+                      break;
+                    case "career_level":
+                      value = escapeHtml(job.career_level || "—");
+                      break;
+                    default:
+                      value = String(cell.getValue() ?? "");
+                  }
+                  return `<td>${value}</td>`;
+                }).join("")}
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pagination">
+        <button id="first-page" ${state.page === 0 ? "disabled" : ""}>First</button>
+        <button id="prev-page" ${state.page === 0 ? "disabled" : ""}>Previous</button>
+        <span>Page ${state.page + 1} of ${totalPages}</span>
+        <button id="next-page" ${state.page >= totalPages - 1 ? "disabled" : ""}>Next</button>
+        <button id="last-page" ${state.page >= totalPages - 1 ? "disabled" : ""}>Last</button>
+      </div>
+    `
+        : `<p>No jobs match your criteria.</p>`
+    }
   `;
+
+  // Set up sorting handlers
+  document.querySelectorAll("th.sortable").forEach((th) => {
+    th.addEventListener("click", () => {
+      const columnId = (th as HTMLElement).dataset.columnId!;
+      const column = table!.getColumn(columnId);
+      if (column) {
+        column.toggleSorting();
+      }
+    });
+  });
+
+  // Set up pagination handlers
+  document.getElementById("first-page")?.addEventListener("click", async () => {
+    state.page = 0;
+    await loadResults();
+  });
+
+  document.getElementById("prev-page")?.addEventListener("click", async () => {
+    if (state.page > 0) {
+      state.page--;
+      await loadResults();
+    }
+  });
+
+  document.getElementById("next-page")?.addEventListener("click", async () => {
+    if (state.page < totalPages - 1) {
+      state.page++;
+      await loadResults();
+    }
+  });
+
+  document.getElementById("last-page")?.addEventListener("click", async () => {
+    state.page = totalPages - 1;
+    await loadResults();
+  });
 }
 
 function formatSalary(job: Job): string {

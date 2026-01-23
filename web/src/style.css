@@ -86,16 +86,64 @@
   min-width: 150px;
 }
 
+.filters .filter-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
 .filters .checkbox-label {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.875rem;
-  margin-top: 0.5rem;
 }
 
 .filters .checkbox-label input {
   margin: 0;
+}
+
+/* Column visibility menu */
+.column-menu {
+  position: absolute;
+  background: var(--pico-background-color);
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 0.25rem;
+  padding: 0.5rem;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.column-menu.hidden {
+  display: none;
+}
+
+.column-menu label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.column-menu label:hover {
+  background: var(--pico-secondary-hover-background);
+}
+
+.column-menu input {
+  margin: 0;
+}
+
+/* Sortable table headers */
+.job-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.job-table th.sortable:hover {
+  background: var(--pico-secondary-hover-background);
 }
 
 /* Pagination */
