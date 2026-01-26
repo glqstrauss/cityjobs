@@ -34,7 +34,7 @@ const state: State = {
   careerLevels: [],
   fullTimeFilter: [],
   examFilter: [],
-  postingTypes: [],
+  postingTypes: ["External"],
   salaryMin: null,
   salaryMax: null,
   page: 0,
