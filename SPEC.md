@@ -366,3 +366,4 @@ https://cityjobs.nyc.gov/jobs?q=Senior_Data_Analyst_DEPARTMENT_OF_TRANSPORTATION
 - [ ] Filter by recency of job posting (mechanism TBD)
 - [ ] Use DuckDB full text search extension for better search: https://duckdb.org/docs/stable/core_extensions/full_text_search
 - [ ] Add a logo
+- [ ] Dynamic filter options: Update available filter values based on current selections (e.g., selecting "Dept of Buildings" shows only civil service titles available at that agency). Could also show counts per option.

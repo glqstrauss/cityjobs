@@ -6,7 +6,7 @@ import {
   type SortingState,
   type VisibilityState,
 } from "@tanstack/table-core";
-import { queryJobs, getAgencies, getCategories, Job } from "../db";
+import { queryJobs, getAgencies, getCategories, getCivilServiceTitles, Job } from "../db";
 
 const PAGE_SIZE = 25;
 
@@ -14,6 +14,7 @@ interface State {
   search: string;
   agencies: string[];
   categories: string[];
+  civilServiceTitles: string[];
   careerLevels: string[];
   fullTimeFilter: string[];
   examFilter: string[];
@@ -29,6 +30,7 @@ const state: State = {
   search: "",
   agencies: [],
   categories: [],
+  civilServiceTitles: [],
   careerLevels: [],
   fullTimeFilter: [],
   examFilter: [],
@@ -137,6 +139,7 @@ let currentData: Job[] = [];
 let totalCount = 0;
 let allAgencies: string[] = [];
 let allCategories: string[] = [];
+let allCivilServiceTitles: string[] = [];
 
 // Track which dropdown is open
 let openDropdown: string | null = null;
@@ -154,6 +157,16 @@ function renderMultiSelectDropdown(
 ): string {
   const count = selected.length;
   const isOpen = openDropdown === id;
+  const showSearch = options.length > 10;
+
+  // Sort options: selected first, then alphabetically
+  const sortedOptions = [...options].sort((a, b) => {
+    const aSelected = selected.includes(a.value);
+    const bSelected = selected.includes(b.value);
+    if (aSelected && !bSelected) return -1;
+    if (!aSelected && bSelected) return 1;
+    return a.label.localeCompare(b.label);
+  });
 
   return `
     <div class="multi-select" data-dropdown="${id}">
@@ -167,16 +180,19 @@ function renderMultiSelectDropdown(
           <button type="button" class="secondary outline" data-select-all="${id}">All</button>
           <button type="button" class="secondary outline" data-select-none="${id}">None</button>
         </div>
-        ${options
-          .map(
-            (opt) => `
-          <label>
-            <input type="checkbox" data-filter="${id}" value="${escapeHtml(opt.value)}" ${selected.includes(opt.value) ? "checked" : ""} />
-            ${escapeHtml(opt.label)}
-          </label>
-        `
-          )
-          .join("")}
+        ${showSearch ? `<div class="dropdown-search"><input type="text" placeholder="Search..." data-search="${id}" /></div>` : ""}
+        <div class="dropdown-options" data-options="${id}">
+          ${sortedOptions
+            .map(
+              (opt) => `
+            <label data-option-value="${escapeHtml(opt.value.toLowerCase())}">
+              <input type="checkbox" data-filter="${id}" value="${escapeHtml(opt.value)}" ${selected.includes(opt.value) ? "checked" : ""} />
+              ${escapeHtml(opt.label)}
+            </label>
+          `
+            )
+            .join("")}
+        </div>
       </div>
     </div>
   `;
@@ -224,7 +240,11 @@ export async function renderJobs(): Promise<void> {
   const app = getApp();
 
   // Fetch filter options
-  [allAgencies, allCategories] = await Promise.all([getAgencies(), getCategories()]);
+  [allAgencies, allCategories, allCivilServiceTitles] = await Promise.all([
+    getAgencies(),
+    getCategories(),
+    getCivilServiceTitles(),
+  ]);
 
   // Build page structure
   app.innerHTML = `
@@ -256,6 +276,12 @@ export async function renderJobs(): Promise<void> {
           "Category",
           allCategories.map((c) => ({ value: c, label: c })),
           state.categories
+        )}
+        ${renderMultiSelectDropdown(
+          "civilServiceTitles",
+          "Civil Service Title",
+          allCivilServiceTitles.map((t) => ({ value: t, label: t })),
+          state.civilServiceTitles
         )}
         ${renderMultiSelectDropdown(
           "careerLevels",
@@ -385,6 +411,33 @@ function setupEventHandlers(): void {
       updateDropdownVisibility();
     }
   });
+
+  // Search within dropdowns
+  setupDropdownSearch();
+}
+
+function setupDropdownSearch(): void {
+  document.querySelectorAll("[data-search]").forEach((input) => {
+    input.addEventListener("input", (e) => {
+      const searchInput = e.target as HTMLInputElement;
+      const dropdownId = searchInput.dataset.search!;
+      const searchTerm = searchInput.value.toLowerCase();
+      const optionsContainer = document.querySelector(`[data-options="${dropdownId}"]`);
+
+      if (!optionsContainer) return;
+
+      optionsContainer.querySelectorAll("label").forEach((label) => {
+        const optionValue = (label as HTMLElement).dataset.optionValue || "";
+        const matches = optionValue.includes(searchTerm);
+        (label as HTMLElement).style.display = matches ? "" : "none";
+      });
+    });
+
+    // Prevent closing dropdown when clicking in search
+    input.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  });
 }
 
 function updateDropdownVisibility(): void {
@@ -460,6 +513,9 @@ function updateFilterState(dropdownId: string): void {
     case "categories":
       state.categories = values;
       break;
+    case "civilServiceTitles":
+      state.civilServiceTitles = values;
+      break;
     case "careerLevels":
       state.careerLevels = values;
       break;
@@ -491,6 +547,12 @@ function rerenderDropdowns(): void {
       "Category",
       allCategories.map((c) => ({ value: c, label: c })),
       state.categories
+    )}
+    ${renderMultiSelectDropdown(
+      "civilServiceTitles",
+      "Civil Service Title",
+      allCivilServiceTitles.map((t) => ({ value: t, label: t })),
+      state.civilServiceTitles
     )}
     ${renderMultiSelectDropdown(
       "careerLevels",
@@ -560,6 +622,9 @@ function setupDropdownHandlers(): void {
       rerenderDropdowns();
     });
   });
+
+  // Search within dropdowns
+  setupDropdownSearch();
 }
 
 async function loadResults(): Promise<void> {
@@ -577,6 +642,7 @@ async function loadResults(): Promise<void> {
       search: state.search || undefined,
       agencies: state.agencies.length > 0 ? state.agencies : undefined,
       categories: state.categories.length > 0 ? state.categories : undefined,
+      civilServiceTitles: state.civilServiceTitles.length > 0 ? state.civilServiceTitles : undefined,
       careerLevels: state.careerLevels.length > 0 ? state.careerLevels : undefined,
       fullTimeFilter: state.fullTimeFilter.length > 0 ? state.fullTimeFilter : undefined,
       examFilter: state.examFilter.length > 0 ? state.examFilter : undefined,
@@ -625,6 +691,47 @@ async function loadResults(): Promise<void> {
   }
 }
 
+function getFilterSummary(): string {
+  const parts: string[] = [];
+
+  if (state.search) {
+    parts.push(`Search: "${escapeHtml(state.search)}"`);
+  }
+  if (state.agencies.length > 0) {
+    parts.push(`Agency: ${state.agencies.map(escapeHtml).join(", ")}`);
+  }
+  if (state.categories.length > 0) {
+    parts.push(`Category: ${state.categories.map(escapeHtml).join(", ")}`);
+  }
+  if (state.civilServiceTitles.length > 0) {
+    parts.push(`Civil Service Title: ${state.civilServiceTitles.map(escapeHtml).join(", ")}`);
+  }
+  if (state.careerLevels.length > 0) {
+    parts.push(`Career Level: ${state.careerLevels.map(escapeHtml).join(", ")}`);
+  }
+  if (state.fullTimeFilter.length === 1) {
+    parts.push(state.fullTimeFilter[0] === "full_time" ? "Full-time only" : "Part-time only");
+  }
+  if (state.examFilter.length === 1) {
+    parts.push(state.examFilter[0] === "requires_exam" ? "Exam required" : "No exam required");
+  }
+  if (state.postingTypes.length === 1) {
+    parts.push(`${state.postingTypes[0]} postings only`);
+  }
+  if (state.salaryMin != null || state.salaryMax != null) {
+    const fmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+    if (state.salaryMin != null && state.salaryMax != null) {
+      parts.push(`Salary: ${fmt.format(state.salaryMin)} - ${fmt.format(state.salaryMax)}`);
+    } else if (state.salaryMin != null) {
+      parts.push(`Salary: ${fmt.format(state.salaryMin)}+`);
+    } else if (state.salaryMax != null) {
+      parts.push(`Salary: up to ${fmt.format(state.salaryMax)}`);
+    }
+  }
+
+  return parts.length > 0 ? parts.join(" · ") : "";
+}
+
 function renderTable(): void {
   if (!table) return;
 
@@ -634,8 +741,10 @@ function renderTable(): void {
   const headerGroups = table.getHeaderGroups();
   const rows = table.getRowModel().rows;
 
+  const filterSummary = getFilterSummary();
+
   resultsDiv.innerHTML = `
-    <p><strong>${totalCount}</strong> jobs found</p>
+    <p><strong>${totalCount}</strong> jobs found${filterSummary ? ` <span class="filter-summary">· ${filterSummary}</span>` : ""}</p>
 
     ${
       rows.length > 0

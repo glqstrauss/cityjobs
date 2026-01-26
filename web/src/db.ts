@@ -86,6 +86,7 @@ export async function queryJobs(options: {
   search?: string;
   agencies?: string[];
   categories?: string[];
+  civilServiceTitles?: string[];
   careerLevels?: string[];
   fullTimeFilter?: string[];
   examFilter?: string[];
@@ -121,6 +122,11 @@ export async function queryJobs(options: {
       (c) => `list_contains(job_categories, '${escapeSql(c)}')`
     );
     conditions.push(`(${categoryConditions.join(" OR ")})`);
+  }
+
+  if (options.civilServiceTitles && options.civilServiceTitles.length > 0) {
+    const titles = options.civilServiceTitles.map((t) => `'${escapeSql(t)}'`).join(", ");
+    conditions.push(`civil_service_title IN (${titles})`);
   }
 
   if (options.careerLevels && options.careerLevels.length > 0) {
@@ -243,6 +249,23 @@ export async function getCategories(): Promise<string[]> {
     if (row?.category) categories.push(String(row.category));
   }
   return categories;
+}
+
+export async function getCivilServiceTitles(): Promise<string[]> {
+  if (!conn) throw new Error("Database not initialized");
+
+  const result = await conn.query(`
+    SELECT DISTINCT civil_service_title FROM jobs
+    WHERE civil_service_title IS NOT NULL AND civil_service_title != ''
+    ORDER BY civil_service_title
+  `);
+
+  const titles: string[] = [];
+  for (let i = 0; i < result.numRows; i++) {
+    const row = result.get(i);
+    if (row?.civil_service_title) titles.push(String(row.civil_service_title));
+  }
+  return titles;
 }
 
 // Generate cityjobs.nyc.gov search URL for a job
