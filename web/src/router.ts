@@ -2,6 +2,7 @@ import { renderJobs } from "./views/jobs";
 import { renderJobDetail } from "./views/job-detail";
 import { renderFaq } from "./views/faq";
 import { renderResources } from "./views/resources";
+import { renderConsole } from "./views/console";
 
 type RouteHandler = (params: Record<string, string>) => Promise<void> | void;
 
@@ -16,6 +17,7 @@ const routes: Route[] = [
   { pattern: /^#?\/jobs\/(.+)$/, handler: (p) => renderJobDetail(p.id) },
   { pattern: /^#?\/faq\/?$/, handler: renderFaq },
   { pattern: /^#?\/resources\/?$/, handler: renderResources },
+  { pattern: /^#?\/console\/?$/, handler: renderConsole },
 ];
 
 function getApp(): HTMLElement {

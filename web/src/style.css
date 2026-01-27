@@ -96,6 +96,19 @@
   padding-right: 1rem;
 }
 
+.filters .fts-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  margin-left: 1rem;
+  white-space: nowrap;
+}
+
+.filters .fts-toggle input {
+  margin: 0;
+}
+
 .filters .filter-row {
   display: flex;
   flex-wrap: wrap;
@@ -274,4 +287,11 @@
   border-radius: 0.25rem;
   font-size: 0.875rem;
   color: var(--pico-muted-color);
+}
+
+/* DuckDB Console */
+#shell-container {
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 0.25rem;
+  overflow: hidden;
 }

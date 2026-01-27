@@ -166,6 +166,7 @@ The app is a single-page application with hash-based routing:
 | `#/jobs/:id`     | Job Detail | Individual job posting details |
 | `#/faq`          | FAQ        | Frequently asked questions     |
 | `#/resources`    | Resources  | Additional resources and links |
+| `#/console`      | Console    | DuckDB WASM console (dev only) |
 
 #### Jobs View
 
@@ -364,6 +365,10 @@ https://cityjobs.nyc.gov/jobs?q=Senior_Data_Analyst_DEPARTMENT_OF_TRANSPORTATION
 ### Future Enhancements
 
 - [ ] Filter by recency of job posting (mechanism TBD)
-- [ ] Use DuckDB full text search extension for better search: https://duckdb.org/docs/stable/core_extensions/full_text_search
+- [x] Use DuckDB full text search extension for better search: https://duckdb.org/docs/stable/core_extensions/full_text_search
+  - Implemented behind feature flag: add `?fts=1` to URL to enable "Advanced search" toggle
+  - Indexes: business_title, job_description, agency, civil_service_title
+  - Uses BM25 scoring with English stemming and stopwords
+- [ ] FTS Performance: Pre-build FTS index in Cloud Function pipeline and store alongside parquet (faster page load, currently index is built on each page load)
 - [ ] Add a logo
 - [ ] Dynamic filter options: Update available filter values based on current selections (e.g., selecting "Dept of Buildings" shows only civil service titles available at that agency). Could also show counts per option.

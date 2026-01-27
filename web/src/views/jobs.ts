@@ -6,12 +6,17 @@ import {
   type SortingState,
   type VisibilityState,
 } from "@tanstack/table-core";
-import { queryJobs, getAgencies, getCategories, getCivilServiceTitles, Job } from "../db";
+import { queryJobs, getAgencies, getCategories, getCivilServiceTitles, isFtsEnabled, Job } from "../db";
+
+// Check if FTS feature flag is enabled via URL parameter
+const urlParams = new URLSearchParams(window.location.search);
+const ftsFeatureEnabled = urlParams.get("fts") === "1";
 
 const PAGE_SIZE = 25;
 
 interface State {
   search: string;
+  useFts: boolean;
   agencies: string[];
   categories: string[];
   civilServiceTitles: string[];
@@ -28,6 +33,7 @@ interface State {
 
 const state: State = {
   search: "",
+  useFts: false,
   agencies: [],
   categories: [],
   civilServiceTitles: [],
@@ -262,6 +268,12 @@ export async function renderJobs(): Promise<void> {
           />
           <button type="button" id="search-btn">Search</button>
         </fieldset>
+        ${ftsFeatureEnabled && isFtsEnabled() ? `
+          <label class="fts-toggle">
+            <input type="checkbox" id="use-fts" ${state.useFts ? "checked" : ""} />
+            Advanced search
+          </label>
+        ` : ""}
       </div>
 
       <div class="filter-row" id="filter-dropdowns">
@@ -350,6 +362,19 @@ function setupEventHandlers(): void {
   };
   salaryMinInput.addEventListener("input", handleSalaryChange);
   salaryMaxInput.addEventListener("input", handleSalaryChange);
+
+  // FTS toggle handler
+  const ftsToggle = document.getElementById("use-fts") as HTMLInputElement | null;
+  if (ftsToggle) {
+    ftsToggle.addEventListener("change", async () => {
+      state.useFts = ftsToggle.checked;
+      // If there's a search term, re-run the search with new mode
+      if (state.search) {
+        state.page = 0;
+        await loadResults();
+      }
+    });
+  }
 
   // Dropdown toggle handlers
   document.querySelectorAll("[data-toggle]").forEach((btn) => {
@@ -640,6 +665,7 @@ async function loadResults(): Promise<void> {
 
     const result = await queryJobs({
       search: state.search || undefined,
+      useFts: state.useFts,
       agencies: state.agencies.length > 0 ? state.agencies : undefined,
       categories: state.categories.length > 0 ? state.categories : undefined,
       civilServiceTitles: state.civilServiceTitles.length > 0 ? state.civilServiceTitles : undefined,
@@ -791,7 +817,7 @@ function renderTable(): void {
                           job.job_categories.length > 0
                             ? `<br><small>${job.job_categories.map((c) => escapeHtml(c)).join(", ")}</small>`
                             : "";
-                        value = `<a href="#/jobs/${escapeHtml(job.job_id)}" class="job-link">${escapeHtml(job.business_title)}</a>${categories}`;
+                        value = `<a href="#/jobs/${escapeHtml(job.id)}" class="job-link">${escapeHtml(job.business_title)}</a>${categories}`;
                         break;
                       case "agency":
                         value = escapeHtml(job.agency);

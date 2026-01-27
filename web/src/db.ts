@@ -1,12 +1,18 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
-import duckdb_wasm from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
-import duckdb_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url";
+import duckdb_wasm from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
+import duckdb_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url";
 
 const BUCKET_URL = "https://storage.googleapis.com/cityjobs-data";
 
 let db: duckdb.AsyncDuckDB | null = null;
 let conn: duckdb.AsyncDuckDBConnection | null = null;
 let sourceUpdatedAt: Date | null = null;
+let ftsEnabled = false;
+
+async function doQuery(c: duckdb.AsyncDuckDBConnection, query: string) {
+  console.log(query);
+  return await c.query(query);
+}
 
 export async function initDb(): Promise<void> {
   // Initialize DuckDB WASM with local bundles (Vite handles the URLs)
@@ -35,10 +41,51 @@ export async function initDb(): Promise<void> {
   const parquetUrl = `${BUCKET_URL}/${parquetPath}`;
   await db.registerFileURL("jobs.parquet", parquetUrl, duckdb.DuckDBDataProtocol.HTTP, false);
 
-  // Create view for easy querying
-  await conn.query(`CREATE VIEW jobs AS SELECT * FROM 'jobs.parquet'`);
+  // Create table for easy querying (table instead of view for FTS support)
+  await doQuery(conn, `CREATE TABLE jobs AS SELECT uuid() as id, * FROM 'jobs.parquet'`);
+
+  // Create FTS index for advanced search
+  await createFtsIndex();
 
   console.log("DuckDB initialized with jobs data");
+}
+
+async function createFtsIndex(): Promise<void> {
+  if (!conn) return;
+
+  try {
+    // Install and load FTS extension
+    await conn.query(`INSTALL fts`);
+    await conn.query(`LOAD fts`);
+
+    // Create FTS index on relevant columns
+    await doQuery(conn, `
+      PRAGMA create_fts_index(
+        'jobs',
+        'id',
+        'business_title', 'job_description', 'agency', 'civil_service_title',
+        stemmer = 'english',
+        stopwords = 'english',
+        lower = 1,
+        strip_accents = 1,
+        overwrite = 1
+      )
+    `);
+
+    ftsEnabled = true;
+    console.log("FTS index created successfully");
+  } catch (error) {
+    console.warn("Failed to create FTS index, falling back to ILIKE search:", error);
+    ftsEnabled = false;
+  }
+}
+
+export function isFtsEnabled(): boolean {
+  return ftsEnabled;
+}
+
+export function getDb(): duckdb.AsyncDuckDB | null {
+  return db;
 }
 
 export function getSourceUpdatedAt(): Date | null {
@@ -46,6 +93,7 @@ export function getSourceUpdatedAt(): Date | null {
 }
 
 export interface Job {
+  id: string;
   job_id: string;
   agency: string;
   posting_type: string;
@@ -84,6 +132,7 @@ function escapeSql(str: string): string {
 
 export async function queryJobs(options: {
   search?: string;
+  useFts?: boolean;
   agencies?: string[];
   categories?: string[];
   civilServiceTitles?: string[];
@@ -101,14 +150,22 @@ export async function queryJobs(options: {
   if (!conn) throw new Error("Database not initialized");
 
   const conditions: string[] = [];
+  let useRelevanceOrder = false;
 
   if (options.search) {
     const escaped = escapeSql(options.search);
-    conditions.push(`(
-      business_title ILIKE '%${escaped}%'
-      OR agency ILIKE '%${escaped}%'
-      OR job_description ILIKE '%${escaped}%'
-    )`);
+
+    if (options.useFts && ftsEnabled) {
+      // FTS search handled separately via CTE
+      useRelevanceOrder = true;
+    } else {
+      // Fall back to ILIKE search
+      conditions.push(`(
+        business_title ILIKE '%${escaped}%'
+        OR agency ILIKE '%${escaped}%'
+        OR job_description ILIKE '%${escaped}%'
+      )`);
+    }
   }
 
   if (options.agencies && options.agencies.length > 0) {
@@ -176,23 +233,51 @@ export async function queryJobs(options: {
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const orderBy = options.orderBy || "posted_date";
-  const orderDir = options.orderDir || "DESC";
   const limit = options.limit || 25;
   const offset = options.offset || 0;
 
+  let countQuery: string;
+  let dataQuery: string;
+
+  if (useRelevanceOrder && options.search) {
+    // FTS query: compute scores in subquery, filter on score in outer query
+    const escaped = escapeSql(options.search);
+    const baseTable = `(
+      SELECT jobs.*, fts_main_jobs.match_bm25(jobs.id, '${escaped}') AS fts_score
+      FROM jobs
+    ) AS scored_jobs`;
+
+    // Filter for non-null FTS score (i.e., matches) plus any other conditions
+    const ftsConditions = ["fts_score IS NOT NULL", ...conditions];
+    const ftsWhere = `WHERE ${ftsConditions.join(" AND ")}`;
+
+    countQuery = `SELECT COUNT(*) as count FROM ${baseTable} ${ftsWhere}`;
+    dataQuery = `
+      SELECT * FROM ${baseTable}
+      ${ftsWhere}
+      ORDER BY fts_score DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+  } else {
+    // Standard query
+    const orderBy = options.orderBy || "posted_date";
+    const orderDir = options.orderDir || "DESC";
+
+    countQuery = `SELECT COUNT(*) as count FROM jobs ${where}`;
+    dataQuery = `
+      SELECT * FROM jobs
+      ${where}
+      ORDER BY ${orderBy} ${orderDir}
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+  }
+
   // Get total count
-  const countResult = await conn.query(`SELECT COUNT(*) as count FROM jobs ${where}`);
+  const countResult = await doQuery(conn, countQuery);
   const totalCount = Number(countResult.get(0)?.count ?? 0);
 
   // Get rows
-  const query = `
-    SELECT * FROM jobs
-    ${where}
-    ORDER BY ${orderBy} ${orderDir}
-    LIMIT ${limit} OFFSET ${offset}
-  `;
-  const result = await conn.query(query);
+  const result = await doQuery(conn, dataQuery);
 
   const rows: Job[] = [];
   for (let i = 0; i < result.numRows; i++) {
@@ -205,10 +290,10 @@ export async function queryJobs(options: {
   return { rows, totalCount };
 }
 
-export async function getJob(jobId: string): Promise<Job | null> {
+export async function getJob(id: string): Promise<Job | null> {
   if (!conn) throw new Error("Database not initialized");
 
-  const result = await conn.query(`SELECT * FROM jobs WHERE job_id = '${escapeSql(jobId)}'`);
+  const result = await doQuery(conn, `SELECT * FROM jobs WHERE id = '${escapeSql(id)}'`);
 
   if (result.numRows === 0) return null;
 
@@ -219,7 +304,7 @@ export async function getJob(jobId: string): Promise<Job | null> {
 export async function getAgencies(): Promise<string[]> {
   if (!conn) throw new Error("Database not initialized");
 
-  const result = await conn.query(`
+  const result = await doQuery(conn, `
     SELECT DISTINCT agency FROM jobs
     WHERE agency IS NOT NULL
     ORDER BY agency
@@ -236,7 +321,7 @@ export async function getAgencies(): Promise<string[]> {
 export async function getCategories(): Promise<string[]> {
   if (!conn) throw new Error("Database not initialized");
 
-  const result = await conn.query(`
+  const result = await doQuery(conn, `
     SELECT DISTINCT unnest(job_categories) as category
     FROM jobs
     WHERE job_categories IS NOT NULL
@@ -254,7 +339,7 @@ export async function getCategories(): Promise<string[]> {
 export async function getCivilServiceTitles(): Promise<string[]> {
   if (!conn) throw new Error("Database not initialized");
 
-  const result = await conn.query(`
+  const result = await doQuery(conn, `
     SELECT DISTINCT civil_service_title FROM jobs
     WHERE civil_service_title IS NOT NULL AND civil_service_title != ''
     ORDER BY civil_service_title
@@ -307,6 +392,7 @@ export function duckDbDateToString(value: unknown): string {
 // Helper to convert DuckDB row to Job object
 function rowToJob(row: Record<string, unknown>): Job {
   return {
+    id: String(row.id ?? ""),
     job_id: String(row.job_id ?? ""),
     agency: String(row.agency ?? ""),
     posting_type: String(row.posting_type ?? ""),

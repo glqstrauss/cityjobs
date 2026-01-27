@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.33.1-dev16.0",
+    "@duckdb/duckdb-wasm-shell": "^1.33.1-dev18.0",
     "@tanstack/table-core": "^8.21.3"
   }
 }

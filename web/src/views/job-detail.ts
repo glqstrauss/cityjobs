@@ -4,10 +4,10 @@ function getApp(): HTMLElement {
   return document.getElementById("app")!;
 }
 
-export async function renderJobDetail(jobId: string): Promise<void> {
+export async function renderJobDetail(id: string): Promise<void> {
   const app = getApp();
 
-  const job = await getJob(jobId);
+  const job = await getJob(id);
 
   if (!job) {
     app.innerHTML = `
