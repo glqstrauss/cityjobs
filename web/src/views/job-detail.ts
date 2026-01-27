@@ -176,15 +176,52 @@ function formatDate(dateStr: string): string {
 }
 
 function formatDescription(text: string): string {
-  // Convert line breaks to paragraphs, escape HTML
-  const escaped = escapeHtml(text);
-  const paragraphs = escaped.split(/\n\n+/).filter((p) => p.trim());
+  // First escape HTML
+  let escaped = escapeHtml(text);
 
-  if (paragraphs.length > 1) {
-    return paragraphs.map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
+  // Detect section headers: 2+ spaces, then short label (letters/spaces only), colon, 2+ spaces
+  escaped = escaped.replace(/\s{2,}([A-Za-z ]{1,30}):\s{2,}/g, "</p><h4>$1</h4><p>");
+
+  // Check if this looks like a numbered list (starts with "1.")
+  const hasNumberedList = /^\s*1\.\s/.test(escaped) || /\s{2,}1\.\s/.test(escaped);
+
+  if (hasNumberedList) {
+    // Convert numbered lists: "1. text; or  2. text" or "1. text  2. text"
+    escaped = escaped.replace(/^\s*1\.\s/, "<ol><li>");
+    escaped = escaped.replace(/\s{2,}1\.\s/g, "</p><ol><li>");
+    escaped = escaped.replace(/;\s+or\s+(\d+)\.\s/g, "</li><li>");
+    escaped = escaped.replace(/\s{2,}(\d+)\.\s/g, "</li><li>");
+    // Close the list at end of content or before next section
+    escaped = escaped.replace(/<li>([^<]+)$/g, "<li>$1</li></ol>");
+    escaped = escaped.replace(/<li>([^<]+)(<\/p>|<h4>)/g, "<li>$1</li></ol>$2");
   }
 
-  return `<p>${escaped.replace(/\n/g, "<br>")}</p>`;
+  // Convert bullet points (· or § or •) to list items
+  if (/[·§•]/.test(escaped)) {
+    escaped = escaped.replace(/\s{2,}[·§•]\s*/g, "</p><ul><li>");
+    escaped = escaped.replace(/^[·§•]\s*/g, "<ul><li>");
+    escaped = escaped.replace(/[·§•]\s*/g, "</li><li>");
+    // Close bullet lists
+    escaped = escaped.replace(/<li>([^<]+)$/g, "<li>$1</li></ul>");
+    escaped = escaped.replace(/<li>([^<]+)(<\/p>|<h4>)/g, "<li>$1</li></ul>$2");
+  }
+
+  // Convert triple+ spaces to paragraph breaks
+  escaped = escaped.replace(/\s{3,}/g, "</p><p>");
+
+  // Wrap in paragraph
+  escaped = `<p>${escaped}</p>`;
+
+  // Clean up empty paragraphs and fix nesting issues
+  escaped = escaped.replace(/<p>\s*<\/p>/g, "");
+  escaped = escaped.replace(/<\/p>\s*<\/p>/g, "</p>");
+  escaped = escaped.replace(/<p>\s*<p>/g, "<p>");
+  escaped = escaped.replace(/<p>\s*<h4>/g, "<h4>");
+  escaped = escaped.replace(/<\/h4>\s*<\/p>/g, "</h4>");
+  escaped = escaped.replace(/<p>\s*<ol>/g, "<ol>");
+  escaped = escaped.replace(/<p>\s*<ul>/g, "<ul>");
+
+  return escaped;
 }
 
 function escapeHtml(str: string): string {

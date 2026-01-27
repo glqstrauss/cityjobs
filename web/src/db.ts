@@ -10,20 +10,30 @@ let sourceUpdatedAt: Date | null = null;
 let ftsEnabled = false;
 
 async function doQuery(c: duckdb.AsyncDuckDBConnection, query: string) {
-  console.log(query);
-  return await c.query(query);
+  const t = performance.now();
+  try {
+    return await c.query(query);
+  } finally {
+    console.log(`[${((performance.now() - t) / 1000).toFixed(2)}s] ${query.trim()}`);
+  }
 }
 
 export async function initDb(): Promise<void> {
+  const t0 = performance.now();
+
   // Initialize DuckDB WASM with local bundles (Vite handles the URLs)
   const worker = new Worker(duckdb_worker, { type: "module" });
   const logger = new duckdb.ConsoleLogger();
   db = new duckdb.AsyncDuckDB(logger, worker);
   await db.instantiate(duckdb_wasm);
+  console.log(`[perf] WASM instantiate: ${((performance.now() - t0) / 1000).toFixed(1)}s`);
 
+  const t1 = performance.now();
   conn = await db.connect();
+  console.log(`[perf] connect: ${((performance.now() - t1) / 1000).toFixed(1)}s`);
 
   // Fetch metadata to get parquet path
+  const t2 = performance.now();
   const metadataRes = await fetch(`${BUCKET_URL}/metadata.json`);
   const metadata = await metadataRes.json();
   const parquetPath = metadata.processed_path;
@@ -36,17 +46,25 @@ export async function initDb(): Promise<void> {
   if (metadata.source_updated_at) {
     sourceUpdatedAt = new Date(metadata.source_updated_at);
   }
+  console.log(`[perf] fetch metadata: ${((performance.now() - t2) / 1000).toFixed(1)}s`);
 
   // Register the parquet file
+  const t3 = performance.now();
   const parquetUrl = `${BUCKET_URL}/${parquetPath}`;
   await db.registerFileURL("jobs.parquet", parquetUrl, duckdb.DuckDBDataProtocol.HTTP, false);
+  console.log(`[perf] register parquet: ${((performance.now() - t3) / 1000).toFixed(1)}s`);
 
   // Create table for easy querying (table instead of view for FTS support)
+  const t4 = performance.now();
   await doQuery(conn, `CREATE TABLE jobs AS SELECT uuid() as id, * FROM 'jobs.parquet'`);
+  console.log(`[perf] CREATE TABLE: ${((performance.now() - t4) / 1000).toFixed(1)}s`);
 
   // Create FTS index for advanced search
+  const t5 = performance.now();
   await createFtsIndex();
+  console.log(`[perf] FTS index: ${((performance.now() - t5) / 1000).toFixed(1)}s`);
 
+  console.log(`[perf] TOTAL: ${((performance.now() - t0) / 1000).toFixed(1)}s`);
   console.log("DuckDB initialized with jobs data");
 }
 
