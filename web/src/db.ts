@@ -32,20 +32,18 @@ export async function initDb(): Promise<void> {
   conn = await db.connect();
   console.log(`[perf] connect: ${((performance.now() - t1) / 1000).toFixed(1)}s`);
 
-  // Fetch metadata to get parquet path
+  // Fetch metadata to get source_updated_at (used to compute parquet path)
   const t2 = performance.now();
   const metadataRes = await fetch(`${BUCKET_URL}/metadata.json`);
   const metadata = await metadataRes.json();
-  const parquetPath = metadata.processed_path;
 
-  if (!parquetPath) {
-    throw new Error("No processed_path in metadata.json");
+  if (!metadata.source_updated_at) {
+    throw new Error("No source_updated_at in metadata.json");
   }
 
-  // Store source updated date
-  if (metadata.source_updated_at) {
-    sourceUpdatedAt = new Date(metadata.source_updated_at);
-  }
+  // Store source updated date and compute parquet path
+  sourceUpdatedAt = new Date(metadata.source_updated_at);
+  const parquetPath = `processed/${metadata.source_updated_at}.parquet`;
   console.log(`[perf] fetch metadata: ${((performance.now() - t2) / 1000).toFixed(1)}s`);
 
   // Register the parquet file
@@ -55,8 +53,9 @@ export async function initDb(): Promise<void> {
   console.log(`[perf] register parquet: ${((performance.now() - t3) / 1000).toFixed(1)}s`);
 
   // Create table for easy querying (table instead of view for FTS support)
+  // Note: 'id' column is pre-generated in backend via md5 hash of row
   const t4 = performance.now();
-  await doQuery(conn, `CREATE TABLE jobs AS SELECT uuid() as id, * FROM 'jobs.parquet'`);
+  await doQuery(conn, `CREATE TABLE jobs AS SELECT * FROM 'jobs.parquet'`);
   console.log(`[perf] CREATE TABLE: ${((performance.now() - t4) / 1000).toFixed(1)}s`);
 
   // Create FTS index for advanced search
@@ -160,6 +159,9 @@ export async function queryJobs(options: {
   postingTypes?: string[];
   salaryMin?: number;
   salaryMax?: number;
+  postedDateFilter?: string; // "7" | "30" | "90" | "custom" | ""
+  postedDateFrom?: string;
+  postedDateTo?: string;
   limit?: number;
   offset?: number;
   orderBy?: string;
@@ -248,6 +250,24 @@ export async function queryJobs(options: {
   }
   if (options.salaryMax != null) {
     conditions.push(`salary_range_from <= ${options.salaryMax}`);
+  }
+
+  // Posted date filter
+  if (options.postedDateFilter) {
+    if (options.postedDateFilter === "custom") {
+      if (options.postedDateFrom) {
+        conditions.push(`posted_date >= '${escapeSql(options.postedDateFrom)}'`);
+      }
+      if (options.postedDateTo) {
+        conditions.push(`posted_date <= '${escapeSql(options.postedDateTo)}'`);
+      }
+    } else {
+      // Preset: last N days
+      const days = parseInt(options.postedDateFilter, 10);
+      if (!isNaN(days)) {
+        conditions.push(`posted_date >= current_date - INTERVAL '${days}' DAY`);
+      }
+    }
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

@@ -2,6 +2,10 @@
 Cloud Function entry point for NYC Jobs data pipeline.
 
 Triggered by Cloud Scheduler (daily) or HTTP request (manual).
+
+Actions:
+    latest (default): Fetch new data if available, then process
+    reprocess_all: Delete all processed files and reprocess all raw snapshots
 """
 
 from datetime import datetime, timezone
@@ -15,7 +19,7 @@ from flask import Request
 
 from fetch import fetch_jobs, get_dataset_metadata
 from process import process_jobs
-from models import JobState
+from models import PipelineState
 
 from google.cloud import storage
 
@@ -28,7 +32,6 @@ def log(message: str, level: str = "info", **fields: Any) -> None:
     """Log a JSON-structured message for Cloud Logging."""
     log_fn = getattr(_logger, level)
     if fields:
-        # Convert datetime objects to ISO strings
         for k, v in fields.items():
             if isinstance(v, datetime):
                 fields[k] = v.isoformat()
@@ -37,105 +40,179 @@ def log(message: str, level: str = "info", **fields: Any) -> None:
         log_fn(message)
 
 
+def get_bucket() -> storage.Bucket:
+    """Get the GCS bucket."""
+    client = storage.Client()
+    return client.bucket(os.environ.get("GCS_BUCKET", "cityjobs-data"))
+
+
+def get_state(bucket: storage.Bucket) -> PipelineState:
+    """Retrieve the pipeline state from GCS."""
+    blob = bucket.blob("metadata.json")
+    if blob.exists():
+        return PipelineState.from_json(blob.download_as_text())
+    log("No previous state found")
+    return PipelineState.empty()
+
+
+def update_state(bucket: storage.Bucket, state: PipelineState) -> None:
+    """Update the pipeline state in GCS."""
+    blob = bucket.blob("metadata.json")
+    content = state.to_json()
+    blob.upload_from_string(content, content_type="application/json")
+    log("State updated", content=content)
+
+
 @functions_framework.http
 def main(request: Request) -> tuple[str, int]:
-    """
-    Main entry point for the Cloud Function.
+    """Route to appropriate handler based on action param."""
+    action = request.args.get("action", "")
+    if not action:
+        try:
+            body = request.get_json(silent=True) or {}
+            action = body.get("action", "latest")
+        except Exception:
+            action = "latest"
 
-    1. Fetches job data from Socrata API
-    2. Stores raw JSON in GCS
-    3. Processes data with DuckDB
-    4. Outputs Parquet to GCS
-    """
+    log("Starting pipeline", action=action)
+
     try:
-        storage_client = storage.Client()
-        bucket = storage_client.bucket(os.environ.get("GCS_BUCKET", "cityjobs-data"))
-
-        job_state = get_job_state(bucket)
-        log("Starting pipeline", **job_state.to_dict())
-        dataset_metadata = get_dataset_metadata()
-        dataset_last_updated = datetime.fromisoformat(dataset_metadata["dataUpdatedAt"])
-        if (
-            job_state.source_updated_at is None
-            or job_state.source_updated_at < dataset_last_updated
-        ):
-            log(
-                "New data available since last run",
-                source_updated_at=job_state.source_updated_at,
-                dataset_last_updated=dataset_last_updated,
-            )
-            job_state.source_updated_at = dataset_last_updated
-            job_state.snapshot_fetched_at = datetime.now(timezone.utc)
-            job_state.snapshot_path = f"raw/{job_state.snapshot_fetched_at}.json"
-            fetch_jobs(bucket.blob(job_state.snapshot_path))
-            update_job_state(bucket, job_state)
+        if action == "reprocess_all":
+            return reprocess_all()
         else:
-            log(
-                "No new data",
-                source_updated_at=job_state.source_updated_at,
-                dataset_last_updated=dataset_last_updated,
-            )
-
-        if (
-            job_state.snapshot_fetched_at
-            and job_state.snapshot_path
-            and (
-                job_state.snapshot_processed_at is None
-                or job_state.snapshot_processed_at < job_state.snapshot_fetched_at
-            )
-        ):
-            log("Processing snapshot", snapshot_path=job_state.snapshot_path)
-            job_state.snapshot_processed_at = datetime.now(timezone.utc)
-            job_state.processed_path = (
-                f"processed/{job_state.snapshot_processed_at}.parquet"
-            )
-            process_jobs(
-                bucket,
-                job_state.snapshot_path,
-                job_state.processed_path,
-            )
-            update_job_state(bucket, job_state)
-        else:
-            log("No processing needed")
-
-        log("Pipeline complete")
-        return "OK", 200
-
+            return process_latest()
     except Exception as e:
         log("Pipeline failed", level="exception", error=str(e))
         return f"Error: {e}", 500
 
 
-def get_job_state(bucket: storage.Bucket) -> JobState:
-    """Retrieve the last job state from GCS."""
-    metadata_blob = bucket.blob("metadata.json")
-    if metadata_blob.exists():
-        return JobState.from_json(metadata_blob.download_as_text())
-    else:
-        log("No previous job state found.")
-        return JobState.empty()
+def process_latest() -> tuple[str, int]:
+    """
+    Normal operation: fetch new data if available, then process.
 
+    1. Check Socrata metadata for dataUpdatedAt
+    2. If newer than our source_updated_at:
+       - Fetch raw JSON -> raw/{dataUpdatedAt}.json
+       - Process -> processed/{dataUpdatedAt}.parquet
+       - Update metadata.json
+    3. If not newer, skip
+    """
+    bucket = get_bucket()
+    state = get_state(bucket)
 
-def update_job_state(bucket: storage.Bucket, job_state: JobState) -> None:
-    """Update the job state in GCS."""
-    metadata_blob = bucket.blob("metadata.json")
-    content = job_state.to_json()
-    metadata_blob.upload_from_string(
-        content,
-        content_type="application/json",
+    # Check for new data
+    dataset_meta = get_dataset_metadata()
+    data_updated_at = datetime.fromisoformat(dataset_meta["dataUpdatedAt"])
+
+    if state.source_updated_at and state.source_updated_at >= data_updated_at:
+        log(
+            "No new data available",
+            source_updated_at=state.source_updated_at,
+            dataset_updated_at=data_updated_at,
+        )
+        return "No new data", 200
+
+    log(
+        "New data available",
+        source_updated_at=state.source_updated_at,
+        dataset_updated_at=data_updated_at,
     )
-    log("Job state updated", content=content)
+
+    # Update state with new timestamp (used for filenames)
+    state.source_updated_at = data_updated_at
+
+    # Fetch raw data
+    raw_path = state.raw_path()
+    parquet_path = state.parquet_path()
+    if not raw_path or not parquet_path:
+        raise ValueError("source_updated_at must be set to generate paths")
+
+    log(f"Fetching to {raw_path}")
+    state.last_fetched_at = datetime.now(timezone.utc)
+    fetch_jobs(bucket.blob(raw_path))
+
+    # Process
+    log(f"Processing {raw_path} -> {parquet_path}")
+    state.last_processed_at = datetime.now(timezone.utc)
+    process_jobs(bucket, raw_path, parquet_path)
+
+    update_state(bucket, state)
+
+    log("Pipeline complete")
+    return "OK", 200
+
+
+def reprocess_all() -> tuple[str, int]:
+    """
+    Reprocess all raw snapshots.
+
+    1. List all files in raw/
+    2. Delete all files in processed/
+    3. For each raw file, process it
+    4. Update metadata.json with latest
+    """
+    bucket = get_bucket()
+    existing_state = get_state(bucket)
+
+    # List raw files
+    raw_blobs = list(bucket.list_blobs(prefix="raw/"))
+    if not raw_blobs:
+        log("No raw files to process")
+        return "No raw files to process", 200
+
+    log(f"Found {len(raw_blobs)} raw files to reprocess")
+
+    # Delete all processed files
+    processed_blobs = list(bucket.list_blobs(prefix="processed/"))
+    for blob in processed_blobs:
+        log(f"Deleting {blob.name}")
+        blob.delete()
+    log(f"Deleted {len(processed_blobs)} processed files")
+
+    # Process each raw file
+    latest_timestamp = None
+    for raw_blob in sorted(raw_blobs, key=lambda b: b.name):
+        # Extract timestamp from filename: raw/2026-01-20T20:00:31+00:00.json
+        timestamp_str = raw_blob.name.replace("raw/", "").replace(".json", "")
+        parquet_path = f"processed/{timestamp_str}.parquet"
+
+        log(f"Processing {raw_blob.name} -> {parquet_path}")
+        process_jobs(bucket, raw_blob.name, parquet_path)
+
+        latest_timestamp = timestamp_str
+
+    # Update metadata with latest
+    if latest_timestamp:
+        state = PipelineState(
+            source_updated_at=datetime.fromisoformat(latest_timestamp),
+            last_fetched_at=existing_state.last_fetched_at,
+            last_processed_at=datetime.now(timezone.utc),
+            record_count=None,
+        )
+        update_state(bucket, state)
+
+    log(f"Reprocessed {len(raw_blobs)} files")
+    return f"Reprocessed {len(raw_blobs)} files", 200
 
 
 # For local development
 if __name__ == "__main__":
+    import sys
     from dotenv import load_dotenv
 
     load_dotenv("../local.env")
 
-    # Simulate HTTP request
     class FakeRequest:
-        pass
+        def __init__(self, args: dict | None = None):
+            self.args = args or {}
 
-    result, status = main(FakeRequest())  # type: ignore
+        def get_json(self, silent: bool = False) -> dict:
+            return {}
+
+    # Parse action from command line
+    action = "latest"
+    if len(sys.argv) > 1:
+        action = sys.argv[1]
+
+    result, status = main(FakeRequest({"action": action}))
     print(f"Result: {result} (status {status})")

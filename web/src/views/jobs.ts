@@ -26,6 +26,9 @@ interface State {
   postingTypes: string[];
   salaryMin: number | null;
   salaryMax: number | null;
+  postedDateFilter: string; // "7" | "30" | "90" | "custom" | ""
+  postedDateFrom: string | null;
+  postedDateTo: string | null;
   page: number;
   sorting: SortingState;
   columnVisibility: VisibilityState;
@@ -43,6 +46,9 @@ const state: State = {
   postingTypes: ["External"],
   salaryMin: null,
   salaryMax: null,
+  postedDateFilter: "",
+  postedDateFrom: null,
+  postedDateTo: null,
   page: 0,
   sorting: [{ id: "posted_date", desc: true }],
   columnVisibility: {
@@ -67,6 +73,13 @@ const examOptions = [
 const postingTypeOptions = [
   { value: "Internal", label: "Internal" },
   { value: "External", label: "External" },
+];
+const postedDateOptions = [
+  { value: "", label: "Any time" },
+  { value: "7", label: "Last 7 days" },
+  { value: "30", label: "Last 30 days" },
+  { value: "90", label: "Last 90 days" },
+  { value: "custom", label: "Custom range" },
 ];
 
 // Column definitions
@@ -314,6 +327,17 @@ export async function renderJobs(): Promise<void> {
           <span>to</span>
           <input type="number" id="salary-max" placeholder="Max" value="${state.salaryMax ?? ""}" />
         </div>
+        <div class="date-filter">
+          <span>Posted:</span>
+          <select id="posted-date-filter">
+            ${postedDateOptions.map((opt) => `<option value="${opt.value}" ${state.postedDateFilter === opt.value ? "selected" : ""}>${opt.label}</option>`).join("")}
+          </select>
+          <div class="custom-date-range ${state.postedDateFilter === "custom" ? "" : "hidden"}">
+            <input type="date" id="posted-date-from" value="${state.postedDateFrom ?? ""}" />
+            <span>to</span>
+            <input type="date" id="posted-date-to" value="${state.postedDateTo ?? ""}" />
+          </div>
+        </div>
       </div>
     </div>
 
@@ -362,6 +386,38 @@ function setupEventHandlers(): void {
   };
   salaryMinInput.addEventListener("input", handleSalaryChange);
   salaryMaxInput.addEventListener("input", handleSalaryChange);
+
+  // Posted date filter handlers
+  const postedDateFilter = document.getElementById("posted-date-filter") as HTMLSelectElement;
+  const postedDateFrom = document.getElementById("posted-date-from") as HTMLInputElement;
+  const postedDateTo = document.getElementById("posted-date-to") as HTMLInputElement;
+  const customDateRange = document.querySelector(".custom-date-range") as HTMLElement;
+
+  postedDateFilter.addEventListener("change", async () => {
+    state.postedDateFilter = postedDateFilter.value;
+    if (postedDateFilter.value === "custom") {
+      customDateRange.classList.remove("hidden");
+    } else {
+      customDateRange.classList.add("hidden");
+      state.postedDateFrom = null;
+      state.postedDateTo = null;
+      state.page = 0;
+      await loadResults();
+    }
+  });
+
+  let dateTimeout: number | null = null;
+  const handleDateChange = () => {
+    if (dateTimeout) clearTimeout(dateTimeout);
+    dateTimeout = window.setTimeout(async () => {
+      state.postedDateFrom = postedDateFrom.value || null;
+      state.postedDateTo = postedDateTo.value || null;
+      state.page = 0;
+      await loadResults();
+    }, 500);
+  };
+  postedDateFrom.addEventListener("change", handleDateChange);
+  postedDateTo.addEventListener("change", handleDateChange);
 
   // FTS toggle handler
   const ftsToggle = document.getElementById("use-fts") as HTMLInputElement | null;
@@ -675,6 +731,9 @@ async function loadResults(): Promise<void> {
       postingTypes: state.postingTypes.length > 0 ? state.postingTypes : undefined,
       salaryMin: state.salaryMin ?? undefined,
       salaryMax: state.salaryMax ?? undefined,
+      postedDateFilter: state.postedDateFilter || undefined,
+      postedDateFrom: state.postedDateFrom ?? undefined,
+      postedDateTo: state.postedDateTo ?? undefined,
       limit: PAGE_SIZE,
       offset: state.page * PAGE_SIZE,
       orderBy,
@@ -752,6 +811,19 @@ function getFilterSummary(): string {
       parts.push(`Salary: ${fmt.format(state.salaryMin)}+`);
     } else if (state.salaryMax != null) {
       parts.push(`Salary: up to ${fmt.format(state.salaryMax)}`);
+    }
+  }
+  if (state.postedDateFilter) {
+    if (state.postedDateFilter === "custom") {
+      if (state.postedDateFrom && state.postedDateTo) {
+        parts.push(`Posted: ${state.postedDateFrom} to ${state.postedDateTo}`);
+      } else if (state.postedDateFrom) {
+        parts.push(`Posted: after ${state.postedDateFrom}`);
+      } else if (state.postedDateTo) {
+        parts.push(`Posted: before ${state.postedDateTo}`);
+      }
+    } else {
+      parts.push(`Posted: last ${state.postedDateFilter} days`);
     }
   }
 

@@ -77,4 +77,4 @@ with
     )
 
 from columns_added
-select *
+select md5(columns_added::varchar) as id, columns_added.*

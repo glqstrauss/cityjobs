@@ -5,24 +5,36 @@ from mashumaro.mixins.json import DataClassJSONMixin
 
 
 @dataclass
-class JobState(DataClassJSONMixin):
-    """Metadata about the job dataset."""
+class PipelineState(DataClassJSONMixin):
+    """Metadata about the pipeline state."""
 
-    snapshot_path: str | None
-    processed_path: str | None
+    source_updated_at: datetime | None  # Socrata dataUpdatedAt, also used as filename
+    last_fetched_at: datetime | None
+    last_processed_at: datetime | None
     record_count: int | None
-    source_updated_at: datetime | None
-    snapshot_fetched_at: datetime | None
-    snapshot_processed_at: datetime | None
+
+    def raw_path(self) -> str | None:
+        """Get raw file path based on source_updated_at timestamp."""
+        if not self.source_updated_at:
+            return None
+        return f"raw/{self.source_updated_at.isoformat()}.json"
+
+    def parquet_path(self) -> str | None:
+        """Get processed file path based on source_updated_at timestamp."""
+        if not self.source_updated_at:
+            return None
+        return f"processed/{self.source_updated_at.isoformat()}.parquet"
 
     @classmethod
-    def empty(cls) -> "JobState":
-        """Create an empty job state for first run."""
+    def empty(cls) -> "PipelineState":
+        """Create an empty state for first run."""
         return cls(
-            snapshot_path=None,
-            processed_path=None,
-            record_count=None,
             source_updated_at=None,
-            snapshot_fetched_at=None,
-            snapshot_processed_at=None,
+            last_fetched_at=None,
+            last_processed_at=None,
+            record_count=None,
         )
+
+
+# Alias for backwards compatibility
+JobState = PipelineState

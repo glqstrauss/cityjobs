@@ -135,6 +135,40 @@
   color: var(--pico-muted-color);
 }
 
+.filters .date-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  margin-left: 1.5rem;
+}
+
+.filters .date-filter select {
+  padding: 0.5rem;
+  font-size: 0.875rem;
+  margin-bottom: 0;
+}
+
+.filters .date-filter span {
+  color: var(--pico-muted-color);
+}
+
+.filters .date-filter .custom-date-range {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.filters .date-filter .custom-date-range.hidden {
+  display: none;
+}
+
+.filters .date-filter input[type="date"] {
+  padding: 0.5rem;
+  font-size: 0.875rem;
+  margin-bottom: 0;
+}
+
 /* Multi-select dropdown component */
 .multi-select {
   position: relative;
