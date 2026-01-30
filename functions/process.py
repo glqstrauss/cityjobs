@@ -11,6 +11,8 @@ from google.cloud import storage
 
 logger = logging.getLogger(__name__)
 
+PARQUET_FORMAT = "FORMAT PARQUET, COMPRESSION ZSTD"
+
 
 def process_jobs(
     bucket: storage.Bucket, raw_path: str, processed_path: str, local_dir=None
@@ -53,7 +55,7 @@ def process_jobs(
         logger.info(f"Applying transformation and writing to {local_output_path}")
         # Write locally first, then upload (httpfs can't write to GCS without explicit creds)
         conn.execute(
-            f"COPY ({transform_sql}) TO '{local_output_path}' (FORMAT PARQUET)"
+            f"COPY ({transform_sql}) TO '{local_output_path}' ({PARQUET_FORMAT})"
         )
 
         processed_blob = bucket.blob(processed_path)
@@ -61,6 +63,51 @@ def process_jobs(
             local_output_path, content_type="application/octet-stream"
         )
         logger.info(f"Uploaded to gs://{bucket.name}/{processed_path}")
+
+
+def update_jobs_history(bucket: storage.Bucket) -> None:
+    """
+    Update jobs_history.parquet from all processed files.
+
+    If jobs_history.parquet doesn't exist, creates it.
+    If it exists, rebuilds it from all processed/* files.
+    """
+    history_blob = bucket.blob("jobs_history.parquet")
+    glob_pattern = f"gs://{bucket.name}/processed/*.parquet"
+
+    conn = duckdb.connect()
+    conn.execute("INSTALL httpfs; LOAD httpfs;")
+
+    # Columns to exclude (large text fields)
+    exclude_cols = "job_description, minimum_qual_requirements, residency_requirement"
+
+    with TemporaryDirectory() as tmpdir:
+        local_output = Path(tmpdir) / "jobs_history.parquet"
+
+        logger.info(f"Building jobs_history.parquet from {glob_pattern}")
+        conn.execute(
+            f"""
+            COPY (
+                SELECT * EXCLUDE({exclude_cols})
+                FROM read_parquet('{glob_pattern}')
+            ) TO '{local_output}' ({PARQUET_FORMAT})
+        """
+        )
+
+        history_blob.upload_from_filename(
+            local_output, content_type="application/octet-stream"
+        )
+        logger.info(f"Updated gs://{bucket.name}/jobs_history.parquet")
+
+
+def rebuild_jobs_history(bucket: storage.Bucket) -> None:
+    """Rebuild jobs_history.parquet from scratch."""
+    history_blob = bucket.blob("jobs_history.parquet")
+    if history_blob.exists():
+        history_blob.delete()
+        logger.info("Deleted existing jobs_history.parquet")
+
+    update_jobs_history(bucket)
 
 
 if __name__ == "__main__":

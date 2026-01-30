@@ -18,7 +18,7 @@ import functions_framework
 from flask import Request
 
 from fetch import fetch_jobs, get_current_process_date
-from process import process_jobs
+from process import process_jobs, update_jobs_history, rebuild_jobs_history
 from models import PipelineState
 
 from google.cloud import storage
@@ -127,6 +127,10 @@ def process_latest() -> tuple[str, int]:
     state.last_processed_at = datetime.now(timezone.utc)
     process_jobs(bucket, raw_path, parquet_path)
 
+    # Update jobs_history
+    log("Updating jobs_history.parquet")
+    update_jobs_history(bucket)
+
     update_state(bucket, state)
 
     log("Pipeline complete")
@@ -171,6 +175,10 @@ def reprocess_all() -> tuple[str, int]:
         process_jobs(bucket, raw_blob.name, parquet_path)
 
         latest_timestamp = timestamp_str
+
+    # Rebuild jobs_history from all processed files
+    log("Rebuilding jobs_history.parquet")
+    rebuild_jobs_history(bucket)
 
     # Update metadata with latest
     if latest_timestamp:
