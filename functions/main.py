@@ -17,7 +17,7 @@ from typing import Any
 import functions_framework
 from flask import Request
 
-from fetch import fetch_jobs, get_dataset_metadata
+from fetch import fetch_jobs, get_current_process_date
 from process import process_jobs
 from models import PipelineState
 
@@ -90,48 +90,39 @@ def process_latest() -> tuple[str, int]:
     """
     Normal operation: fetch new data if available, then process.
 
-    1. Check Socrata metadata for dataUpdatedAt
-    2. If newer than our source_updated_at:
-       - Fetch raw JSON -> raw/{dataUpdatedAt}.json
-       - Process -> processed/{dataUpdatedAt}.parquet
-       - Update metadata.json
-    3. If not newer, skip
+    1. Fetch 1 record to get process_date (lightweight check)
+    2. Check if raw file with that process_date already exists
+    3. If not, fetch full dataset and process
     """
     bucket = get_bucket()
     state = get_state(bucket)
 
-    # Check for new data
-    dataset_meta = get_dataset_metadata()
-    data_updated_at = datetime.fromisoformat(dataset_meta["dataUpdatedAt"])
+    # Fetch 1 record to get the actual process_date
+    process_date_str = get_current_process_date()
+    if not process_date_str:
+        log("Could not get process_date from Socrata", level="error")
+        return "Error: could not get process_date", 500
 
-    if state.source_updated_at and state.source_updated_at >= data_updated_at:
-        log(
-            "No new data available",
-            source_updated_at=state.source_updated_at,
-            dataset_updated_at=data_updated_at,
-        )
+    # Parse: "2026-01-26T00:00:00.000" -> "2026-01-26T00:00:00+00:00"
+    process_date = datetime.fromisoformat(process_date_str.split(".")[0] + "+00:00")
+    log(f"Current process_date: {process_date.isoformat()}")
+
+    # Check if we already have this process_date
+    raw_path = f"raw/{process_date.isoformat()}.json"
+    raw_blob = bucket.blob(raw_path)
+
+    if raw_blob.exists():
+        log("No new data (process_date already exists)", process_date=process_date)
         return "No new data", 200
 
-    log(
-        "New data available",
-        source_updated_at=state.source_updated_at,
-        dataset_updated_at=data_updated_at,
-    )
-
-    # Update state with new timestamp (used for filenames)
-    state.source_updated_at = data_updated_at
-
-    # Fetch raw data
-    raw_path = state.raw_path()
-    parquet_path = state.parquet_path()
-    if not raw_path or not parquet_path:
-        raise ValueError("source_updated_at must be set to generate paths")
-
-    log(f"Fetching to {raw_path}")
+    # New data - fetch full dataset
+    log(f"New process_date, fetching to {raw_path}")
+    state.source_updated_at = process_date
     state.last_fetched_at = datetime.now(timezone.utc)
-    fetch_jobs(bucket.blob(raw_path))
+    fetch_jobs(raw_blob)
 
     # Process
+    parquet_path = f"processed/{process_date.isoformat()}.parquet"
     log(f"Processing {raw_path} -> {parquet_path}")
     state.last_processed_at = datetime.now(timezone.utc)
     process_jobs(bucket, raw_path, parquet_path)

@@ -56,6 +56,24 @@ def get_dataset_metadata() -> dict:
     return response.json()
 
 
+def fetch_process_date(auth: tuple[str, str] | None) -> str | None:
+    """Fetch just 1 record to get the process_date (lightweight check)."""
+    url = f"{SOCRATA_BASE_URL}/resource/{DATASET_ID}.json"
+    params = {"$limit": 1}
+
+    if auth:
+        response = requests.get(url, params=params, auth=auth)
+    else:
+        response = requests.get(url, params=params)
+
+    response.raise_for_status()
+    records = response.json()
+
+    if records and "process_date" in records[0]:
+        return records[0]["process_date"]
+    return None
+
+
 def fetch_all_jobs(auth: tuple[str, str] | None) -> list[dict]:
     """Fetch all job records from Socrata with pagination."""
     all_records = []
@@ -82,6 +100,12 @@ def fetch_all_jobs(auth: tuple[str, str] | None) -> list[dict]:
         offset += PAGE_SIZE
 
     return all_records
+
+
+def get_current_process_date() -> str | None:
+    """Get the current process_date from Socrata (lightweight 1-record fetch)."""
+    auth = get_socrata_auth()
+    return fetch_process_date(auth)
 
 
 def fetch_jobs(raw_blob: storage.Blob) -> str | None:
