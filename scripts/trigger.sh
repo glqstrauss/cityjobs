@@ -10,9 +10,12 @@
 
 set -e
 
-FUNCTION_NAME="cityjobs-fetch"
-REGION="us-east1"
-PROJECT="city-jobs-483916"
+# Load env from project root if available
+[ -f "$(dirname "$0")/../.env" ] && set -a && source "$(dirname "$0")/../.env" && set +a
+
+FUNCTION_NAME="${CLOUD_FUNCTION_NAME:-cityjobs-fetch}"
+REGION="${GCP_REGION:-us-east1}"
+PROJECT="${GCP_PROJECT:?Set GCP_PROJECT in .env}"
 
 case "${1:-latest}" in
   latest|run)

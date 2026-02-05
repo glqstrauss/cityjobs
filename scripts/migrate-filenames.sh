@@ -4,7 +4,10 @@
 #
 set -e
 
-BUCKET="gs://cityjobs-data"
+# Load env from project root if available
+[ -f "$(dirname "$0")/../.env" ] && set -a && source "$(dirname "$0")/../.env" && set +a
+
+BUCKET="gs://${GCS_BUCKET:?Set GCS_BUCKET in .env}"
 
 echo "=== Migration: Rename raw files to use process_date ==="
 echo ""

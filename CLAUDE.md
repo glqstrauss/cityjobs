@@ -29,15 +29,20 @@ cityjobs/
 ├── .pre-commit-config.yaml   # Pre-commit hooks (uv, black, sqlfmt)
 ├── functions/                # Python Cloud Function (deployment unit)
 │   ├── main.py               # Entry point, orchestration
-│   ├── models.py             # JobState dataclass (mashumaro)
+│   ├── models.py             # PipelineState dataclass (mashumaro)
 │   ├── fetch.py              # Socrata fetch logic
 │   ├── process.py            # DuckDB processing
 │   ├── requirements.txt      # Generated from pyproject.toml
 │   └── sql/
 │       └── transform.sql     # DuckDB SQL transforms
 ├── web/                      # Static frontend
+│   ├── deploy.sh             # Build + gzip + upload to GCS
 │   ├── index.html
-│   ├── src/                  # TypeScript source
+│   ├── src/
+│   │   ├── main.ts           # Entry point
+│   │   ├── db.ts             # DuckDB WASM wrapper (loads parquet from GCS)
+│   │   ├── router.ts         # Hash-based SPA router
+│   │   └── views/            # jobs, job-detail, faq, resources, console
 │   └── style.css
 ├── cors.json                 # GCS CORS configuration
 ├── SPEC.md                   # Architecture and decisions
@@ -143,6 +148,6 @@ npm run build    # Build for production
 **Structure:**
 
 - `src/main.ts` - Entry point
-- `src/db.ts` - DuckDB WASM wrapper (loads parquet from GCS)
+- `src/db.ts` - DuckDB WASM wrapper (loads parquet from GCS, FTS index)
 - `src/router.ts` - Hash-based SPA router
-- `src/views/` - View components (jobs, job-detail, faq, resources)
+- `src/views/` - View components (jobs, job-detail, faq, resources, console)

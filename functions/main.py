@@ -43,7 +43,10 @@ def log(message: str, level: str = "info", **fields: Any) -> None:
 def get_bucket() -> storage.Bucket:
     """Get the GCS bucket."""
     client = storage.Client()
-    return client.bucket(os.environ.get("GCS_BUCKET", "cityjobs-data"))
+    bucket_name = os.environ.get("GCS_BUCKET")
+    if not bucket_name:
+        raise RuntimeError("GCS_BUCKET environment variable is required")
+    return client.bucket(bucket_name)
 
 
 def get_state(bucket: storage.Bucket) -> PipelineState:

@@ -8,7 +8,7 @@ from mashumaro.mixins.json import DataClassJSONMixin
 class PipelineState(DataClassJSONMixin):
     """Metadata about the pipeline state."""
 
-    source_updated_at: datetime | None  # Socrata dataUpdatedAt, also used as filename
+    source_updated_at: datetime | None  # Socrata process_date, also used as filename
     last_fetched_at: datetime | None
     last_processed_at: datetime | None
     record_count: int | None
@@ -34,7 +34,3 @@ class PipelineState(DataClassJSONMixin):
             last_processed_at=None,
             record_count=None,
         )
-
-
-# Alias for backwards compatibility
-JobState = PipelineState

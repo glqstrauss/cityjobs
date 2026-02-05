@@ -78,32 +78,38 @@ A GCP-hosted data pipeline that:
 
 **Responsibilities**:
 
-1. Check Socrata metadata for updates (skip if no new data)
-2. Fetch all job postings from Socrata API
-3. Store raw JSON snapshot in GCS
-4. Run DuckDB SQL transformations
-5. Export processed data as Parquet to GCS
-6. Update metadata.json with processedPath
+1. Fetch 1 record from Socrata to get `process_date` (lightweight dedup check)
+2. Skip if raw file for that `process_date` already exists
+3. Fetch all job postings from Socrata API
+4. Store raw JSON snapshot in GCS
+5. Run DuckDB SQL transformations
+6. Export processed data as Parquet to GCS
+7. Rebuild `jobs_history.parquet` (all snapshots, excludes large text columns)
+8. Update `metadata.json` with latest timestamps
 
 **GCS Storage Schema**:
 
 ```
 gs://cityjobs-data/
-├── raw/
-│   ├── 2025-01-07T06:00:00Z.json
+├── raw/                          # Raw JSON snapshots (keyed by process_date)
+│   ├── 2026-01-26T00:00:00+00:00.json
 │   └── ...
-├── processed/
-│   └── 2025-01-07T06:00:00Z.parquet
-├── metadata.json             # Last update timestamps + paths
-└── index.html                # Static site entry point
+├── processed/                    # Per-snapshot Parquet (full columns)
+│   ├── 2026-01-26T00:00:00+00:00.parquet
+│   └── ...
+├── jobs_history.parquet          # All snapshots combined (excludes large text cols)
+├── metadata.json                 # Pipeline state (source_updated_at, timestamps)
+├── index.html                    # Static site entry point
+└── assets/                       # Gzipped JS/CSS/WASM bundles
 ```
 
 **Processed Data Schema**:
 
-| Column                    | Type      | Description                  |
-| ------------------------- | --------- | ---------------------------- |
-| job_id                    | VARCHAR   | Unique job identifier        |
-| agency                    | VARCHAR   | NYC agency name              |
+| Column                    | Type      | Description                           |
+| ------------------------- | --------- | ------------------------------------- |
+| id                        | VARCHAR   | Stable row ID (md5 hash of full row)  |
+| job_id                    | VARCHAR   | Socrata job identifier                |
+| agency                    | VARCHAR   | NYC agency name                       |
 | posting_type              | VARCHAR   | Internal/External            |
 | number_of_positions       | VARCHAR   | Number of openings           |
 | business_title            | VARCHAR   | Job title                    |
@@ -125,7 +131,8 @@ gs://cityjobs-data/
 | residency_requirement     | VARCHAR   | NYC residency rules          |
 | posted_date               | DATE      | Original posting date        |
 | posted_until_date         | DATE      | Application deadline         |
-| posting_updated_date      | DATE      | Last update date             |
+| posting_updated_date      | DATE      | Last update date                      |
+| processed_date            | DATE      | Socrata process_date (snapshot date)  |
 
 **Job Categories** (14 total):
 
@@ -174,12 +181,16 @@ Primary view for searching and browsing jobs.
 
 **Search/Filter Options**:
 
-- Text search (searches title, description, agency)
-- Agency dropdown
+- Text search (searches title, description, agency) with optional FTS (`?fts=1`)
+- Agency multi-select
 - Category multi-select
-- Salary range slider
-- Full-time/Part-time toggle
-- Career level filter
+- Civil service title multi-select
+- Career level multi-select
+- Posting type (Internal/External)
+- Full-time / Part-time toggle
+- Requires exam toggle
+- Salary range (min/max inputs)
+- Posted date filter (last 7/30/90 days or custom range)
 
 **Results Display**:
 
@@ -233,25 +244,28 @@ Links to external resources:
 ```
 cityjobs/
 ├── pyproject.toml            # Python dependencies (UV)
-├── .pre-commit-config.yaml   # Pre-commit hooks
+├── .pre-commit-config.yaml   # Pre-commit hooks (uv, black, sqlfmt)
 ├── functions/                # Python Cloud Function
-│   ├── main.py               # Entry point (HTTP handler)
+│   ├── main.py               # Entry point (HTTP handler, orchestration)
+│   ├── models.py             # PipelineState dataclass (mashumaro)
 │   ├── fetch.py              # Socrata fetching logic
-│   ├── process.py            # DuckDB processing
+│   ├── process.py            # DuckDB processing + jobs_history
 │   ├── requirements.txt      # Generated from pyproject.toml
 │   └── sql/
 │       └── transform.sql     # DuckDB transformation queries
 ├── web/                      # Static frontend
+│   ├── deploy.sh             # Build + gzip compress + upload to GCS
 │   ├── index.html
 │   ├── src/
 │   │   ├── main.ts           # Entry point
 │   │   ├── router.ts         # Hash-based routing
-│   │   ├── db.ts             # DuckDB WASM wrapper
+│   │   ├── db.ts             # DuckDB WASM wrapper + FTS index
 │   │   └── views/
 │   │       ├── jobs.ts
 │   │       ├── job-detail.ts
 │   │       ├── faq.ts
-│   │       └── resources.ts
+│   │       ├── resources.ts
+│   │       └── console.ts    # DuckDB WASM shell (dev tool)
 │   └── style.css
 ├── cors.json                 # GCS CORS configuration
 ├── SPEC.md                   # This file
@@ -268,31 +282,6 @@ cityjobs/
 | `SOCRATA_APP_KEY_ID`     | Socrata API key ID        | Secret Manager  |
 | `SOCRATA_APP_KEY_SECRET` | Socrata API key secret    | Secret Manager  |
 | `GCS_BUCKET`             | Cloud Storage bucket name | Environment var |
-
----
-
-## Deployment
-
-**Cloud Function:**
-
-```bash
-gcloud functions deploy cityjobs-fetch \
-  --gen2 --runtime python311 --region us-east1 \
-  --trigger-http --no-allow-unauthenticated \
-  --entry-point main --source ./functions \
-  --set-env-vars GCS_BUCKET=cityjobs-data,GCP_PROJECT=city-jobs-483916 \
-  --set-secrets 'SOCRATA_APP_KEY_ID=SOCRATA_APP_KEY_ID:latest,SOCRATA_APP_KEY_SECRET=SOCRATA_APP_KEY_SECRET:latest'
-```
-
-**Static site:**
-
-```bash
-# Build (if using bundler)
-cd web && npm run build
-
-# Deploy to GCS
-gsutil -m cp -r web/dist/* gs://cityjobs-data/
-```
 
 ---
 
@@ -313,62 +302,30 @@ gsutil -m cp -r web/dist/* gs://cityjobs-data/
 
 **In Progress:**
 
-- [ ] QA and bug fixes for web UI
+- [ ] Metrics dashboard (backend `jobs_history.parquet` ready, frontend stashed)
 
 ---
 
-## QA TODOs
-
-### Quick Wins
-
-- [x] Fix "Invalid Date" display - date parsing issue
-- [x] Fix job link URLs - construct cityjobs.nyc.gov format in DuckDB transform
-- [x] Table CSS: smaller font, horizontal scroll, better density
-- [x] Show actual last updated date from metadata.json `source_updated_at`
-- [x] Changing a filter changes search button to "Apply Filters" to indicate re-query is needed
-- [x] Only job title is clickable in the job list (not the whole row)
-- [x] Add additional optional columns to table columns selector:
-  - Civil Service Title
-  - Title Classification
-  - Is Full Time
-- [x] Search behavior
-  - [x] Search button should only be needed for text search input. Move search button next to text input.
-  - [x] Changing selected columns should re-render table immediately (no search button)
-  - [x] Changing filter values should re-render table immediately (no search button)
-- [x] Add filters for:
-  - [x] Career level (multi-select: allow any combination)
-  - [x] Full time/part time (multi-select: full time, part time, both)
-  - [x] Requires exam (multi-select: requires exam, does not require exam, both)
-
-### TanStack Table Integration
-
-Replace current table with TanStack Table (headless) for:
-
-- [x] Column sorting (wired to DuckDB ORDER BY)
-- [x] Column visibility toggle (show/hide columns)
-- [x] Better pagination controls (First/Last buttons added)
-- [ ] Dynamic filtering on all fields (wired to DuckDB WHERE) - future enhancement
-
-Library: `@tanstack/table-core` (~15kb, vanilla JS)
-Approach: TanStack manages UI state, DuckDB executes queries
+## Design Decisions
 
 ### Job Link Format
 
-It's not possible to directly generate the URL so instead we generate a search URL consisting of job title and agency
-https://cityjobs.nyc.gov/jobs?q=Senior_Data_Analyst_DEPARTMENT_OF_TRANSPORTATION
+It's not possible to directly link to a job on cityjobs.nyc.gov, so we generate a search URL:
+`https://cityjobs.nyc.gov/jobs?q=Senior_Data_Analyst_DEPARTMENT_OF_TRANSPORTATION`
 
-### Dev Ergonomics
+### Deduplication
 
-- [ ] Wrap website deployment in `npm deploy` script
-- [ ] Wrap Cloud Function deployment in `deploy.sh` script
+Socrata's `dataUpdatedAt` metadata timestamp can change even when actual data hasn't changed. We use `process_date` (from the data itself) to deduplicate raw snapshots. The pipeline fetches 1 record to check `process_date` before deciding whether to fetch the full dataset.
 
-### Future Enhancements
+### Jobs History
 
-- [ ] Filter by recency of job posting (mechanism TBD)
-- [x] Use DuckDB full text search extension for better search: https://duckdb.org/docs/stable/core_extensions/full_text_search
-  - Implemented behind feature flag: add `?fts=1` to URL to enable "Advanced search" toggle
-  - Indexes: business_title, job_description, agency, civil_service_title
-  - Uses BM25 scoring with English stemming and stopwords
-- [ ] FTS Performance: Pre-build FTS index in Cloud Function pipeline and store alongside parquet (faster page load, currently index is built on each page load)
+`jobs_history.parquet` at bucket root combines all `processed/*.parquet` snapshots via DuckDB glob, excluding large text columns (`job_description`, `minimum_qual_requirements`, `residency_requirement`). Rebuilt from scratch on every pipeline run.
+
+---
+
+## Future Enhancements
+
+- [ ] Metrics dashboard with historical data from `jobs_history.parquet`
+- [ ] FTS Performance: Pre-build FTS index in Cloud Function pipeline (currently built on each page load)
+- [ ] Dynamic filter options: Update available values based on current selections (with counts per option)
 - [ ] Add a logo
-- [ ] Dynamic filter options: Update available filter values based on current selections (e.g., selecting "Dept of Buildings" shows only civil service titles available at that agency). Could also show counts per option.

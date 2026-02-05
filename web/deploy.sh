@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+# Load env from project root if available
+[ -f "../.env" ] && set -a && source "../.env" && set +a
+
+BUCKET="${GCS_BUCKET:?Set GCS_BUCKET in .env}"
+
 # Build the project
 echo "Building..."
 npm run build
@@ -19,11 +24,11 @@ cd ../..
 # Upload gzipped assets with Content-Encoding header
 echo "Uploading compressed assets..."
 gsutil -h "Content-Encoding:gzip" -h "Cache-Control:public, max-age=31536000" \
-  -m cp -r dist/assets/* gs://cityjobs-data/assets/
+  -m cp -r dist/assets/* gs://${BUCKET}/assets/
 
 # Upload index.html (not gzipped, small file)
 echo "Uploading index.html..."
 gsutil -h "Cache-Control:public, max-age=300" \
-  cp dist/index.html gs://cityjobs-data/
+  cp dist/index.html gs://${BUCKET}/
 
 echo "Deploy complete!"

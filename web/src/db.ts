@@ -2,7 +2,10 @@ import * as duckdb from "@duckdb/duckdb-wasm";
 import duckdb_wasm from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
 import duckdb_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url";
 
-const BUCKET_URL = "https://storage.googleapis.com/cityjobs-data";
+const BUCKET_URL = import.meta.env.VITE_BUCKET_URL;
+if (!BUCKET_URL) {
+  throw new Error("VITE_BUCKET_URL environment variable is required");
+}
 
 let db: duckdb.AsyncDuckDB | null = null;
 let conn: duckdb.AsyncDuckDBConnection | null = null;

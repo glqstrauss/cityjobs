@@ -11,6 +11,7 @@ uv.lock
 local.env
 .env
 .env.*
+!.env.example
 
 # IDE
 .vscode/
