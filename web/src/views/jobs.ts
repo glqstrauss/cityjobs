@@ -268,6 +268,12 @@ export async function renderJobs(): Promise<void> {
   // Build page structure
   app.innerHTML = `
     <h1>NYC Government Jobs</h1>
+    <p class="data-notice">
+      <small>
+        Note: This site may not include all jobs listed on the official site.
+        <a href="#/faq#data-coverage">Learn more</a>
+      </small>
+    </p>
 
     <div class="filters" id="filters">
       <div class="search-row">

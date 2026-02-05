@@ -6,6 +6,12 @@
   padding: 2rem;
 }
 
+/* Data coverage notice */
+.data-notice {
+  color: var(--pico-muted-color);
+  margin-bottom: 0.5rem;
+}
+
 /* Last updated notice */
 .last-updated {
   font-size: 0.875rem;

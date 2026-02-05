@@ -21,6 +21,21 @@ export function renderFaq(): void {
     <article class="content-page">
       <h1>Frequently Asked Questions</h1>
 
+      <section id="data-coverage">
+        <h2>Why are some jobs missing?</h2>
+        <p>
+          This site uses the
+          <a href="https://data.cityofnewyork.us/City-Government/NYC-Jobs/kpav-sd4t" target="_blank">
+            NYC Jobs Postings dataset
+          </a>
+          from NYC Open Data, which currently only includes roughly 80% of the jobs
+          listed on the official
+          <a href="https://cityjobs.nyc.gov" target="_blank">cityjobs.nyc.gov</a>
+          site. We're working on a more complete data source. In the meantime,
+          always check the official site for the most comprehensive listings.
+        </p>
+      </section>
+
       <section>
         <h2>What is this site?</h2>
         <p>

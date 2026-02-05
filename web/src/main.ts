@@ -8,14 +8,13 @@ async function main() {
   // Update footer with last updated date
   const lastUpdated = getSourceUpdatedAt();
   if (lastUpdated) {
-    const dateStr = lastUpdated.toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
-    const footer = document.querySelector("footer small");
-    if (footer) {
-      footer.innerHTML = `Data from <a href="https://data.cityofnewyork.us" target="_blank">NYC Open Data</a>. Last updated ${dateStr}.`;
+    const el = document.getElementById("last-updated");
+    if (el) {
+      el.textContent = lastUpdated.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      });
     }
   }
 
