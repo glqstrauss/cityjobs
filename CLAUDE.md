@@ -126,8 +126,7 @@ gsutil cat gs://cityjobs-data/metadata.json
 ### Deploy Static Site
 
 ```bash
-cd web && npm run build
-gsutil -m cp -r dist/* gs://cityjobs-data/
+npm run deploy
 ```
 
 ## Web Development
@@ -142,6 +141,7 @@ npm run build    # Build for production
 **Stack:** Vite + TypeScript + Pico CSS + DuckDB WASM
 
 **Structure:**
+
 - `src/main.ts` - Entry point
 - `src/db.ts` - DuckDB WASM wrapper (loads parquet from GCS)
 - `src/router.ts` - Hash-based SPA router
