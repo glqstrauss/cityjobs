@@ -32,6 +32,7 @@ cityjobs/
 │   ├── models.py             # PipelineState dataclass (mashumaro)
 │   ├── fetch.py              # Socrata fetch logic
 │   ├── process.py            # DuckDB processing
+│   ├── deploy.sh             # Deploy Cloud Function to GCP
 │   ├── requirements.txt      # Generated from pyproject.toml
 │   └── sql/
 │       └── transform.sql     # DuckDB SQL transforms
@@ -100,13 +101,7 @@ pre-commit run --all-files
 ### Redeploy Cloud Function
 
 ```bash
-gcloud functions deploy cityjobs-fetch \
-  --gen2 --runtime python311 --region us-east1 \
-  --trigger-http --no-allow-unauthenticated \
-  --entry-point main --source ./functions \
-  --memory 1GB \
-  --set-env-vars GCS_BUCKET=cityjobs-data,GCP_PROJECT=city-jobs-483916 \
-  --set-secrets 'SOCRATA_APP_KEY_ID=SOCRATA_APP_KEY_ID:latest,SOCRATA_APP_KEY_SECRET=SOCRATA_APP_KEY_SECRET:latest'
+./functions/deploy.sh
 ```
 
 ### Manually Trigger Fetch
@@ -151,3 +146,61 @@ npm run build    # Build for production
 - `src/db.ts` - DuckDB WASM wrapper (loads parquet from GCS, FTS index)
 - `src/router.ts` - Hash-based SPA router
 - `src/views/` - View components (jobs, job-detail, faq, resources, console)
+
+## CI/CD
+
+GitHub Actions deploys automatically on push to `main`:
+
+- **Frontend** (`.github/workflows/deploy-frontend.yml`): Triggers on `web/**` changes. Runs `web/deploy.sh`.
+- **Backend** (`.github/workflows/deploy-backend.yml`): Triggers on `functions/**` changes. Runs `functions/deploy.sh`.
+
+Auth uses [Workload Identity Federation](https://cloud.google.com/iam/docs/workload-identity-federation) (keyless, no service account JSON keys).
+
+### GitHub Repository Variables
+
+Set in Settings > Secrets and variables > Actions > Variables:
+
+| Variable | Description |
+|----------|-------------|
+| `GCP_PROJECT_ID` | GCP project ID |
+| `GCS_BUCKET` | GCS bucket name |
+| `GCP_REGION` | GCP region |
+| `WIF_PROVIDER` | Workload Identity Provider (full resource name) |
+| `WIF_SERVICE_ACCOUNT` | Service account email for GitHub Actions |
+| `VITE_BUCKET_URL` | Public GCS bucket URL for frontend |
+
+### WIF Setup (one-time)
+
+```bash
+PROJECT_ID=city-jobs-483916
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+REPO=glqstrauss/cityjobs
+SA_EMAIL=github-actions@${PROJECT_ID}.iam.gserviceaccount.com
+
+# Create service account
+gcloud iam service-accounts create github-actions \
+  --display-name="GitHub Actions" --project=$PROJECT_ID
+
+# Grant permissions (storage + cloud functions + SA user)
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:$SA_EMAIL" --role="roles/storage.admin"
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:$SA_EMAIL" --role="roles/cloudfunctions.developer"
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:$SA_EMAIL" --role="roles/iam.serviceAccountUser"
+
+# Create Workload Identity Pool + GitHub OIDC Provider
+gcloud iam workload-identity-pools create github-pool \
+  --location="global" --display-name="GitHub Actions Pool" --project=$PROJECT_ID
+gcloud iam workload-identity-pools providers create-oidc github-provider \
+  --location="global" --workload-identity-pool="github-pool" \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --attribute-condition="assertion.repository=='${REPO}'" --project=$PROJECT_ID
+
+# Allow GitHub to impersonate the SA
+gcloud iam service-accounts add-iam-policy-binding $SA_EMAIL \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-pool/attribute.repository/${REPO}" \
+  --project=$PROJECT_ID
+```
