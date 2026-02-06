@@ -181,11 +181,13 @@ SA_EMAIL=github-actions@${PROJECT_ID}.iam.gserviceaccount.com
 gcloud iam service-accounts create github-actions \
   --display-name="GitHub Actions" --project=$PROJECT_ID
 
-# Grant permissions (storage + cloud functions + SA user)
+# Grant permissions (storage + cloud functions + cloud run + SA user)
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:$SA_EMAIL" --role="roles/storage.admin"
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:$SA_EMAIL" --role="roles/cloudfunctions.developer"
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:$SA_EMAIL" --role="roles/run.admin"
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:$SA_EMAIL" --role="roles/iam.serviceAccountUser"
 
