@@ -34,6 +34,7 @@ gcloud services enable \
   iam.googleapis.com \
   sts.googleapis.com \
   cloudfunctions.googleapis.com \
+  cloudresourcemanager.googleapis.com \
   --project="$PROJECT_ID"
 
 # 2. Create service account
@@ -44,7 +45,7 @@ gcloud iam service-accounts create "$SA_NAME" \
 
 # 3. Grant permissions
 echo "=== Granting IAM roles ==="
-for role in roles/storage.admin roles/cloudfunctions.developer roles/iam.serviceAccountUser; do
+for role in roles/storage.admin roles/cloudfunctions.developer roles/iam.serviceAccountUser roles/run.admin; do
   echo "  $role"
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:$SA_EMAIL" \
